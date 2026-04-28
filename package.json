@@ -1,0 +1,12 @@
+{
+  "name": "stock-scorecard-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Prototype web app for the Investing with Brandon stock scorecard.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js"
+  }
+}

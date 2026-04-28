@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Investing with Brandon</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <button id="sidebarToggle" class="sidebar-toggle" type="button" title="Collapse sidebar" aria-label="Collapse sidebar"></button>
+        <header class="brand-block">
+          <p class="eyebrow">Stock Sheet 4.0</p>
+          <h1>Investing with Brandon</h1>
+          <p>Main Scorecard</p>
+        </header>
+
+        <section class="panel">
+          <h2>Global Inputs</h2>
+          <div class="metric-row">
+            <span>AAA yield</span>
+            <strong id="aaaYield">--</strong>
+          </div>
+          <div class="metric-row">
+            <span>Bond yield</span>
+            <strong id="bondYield">--</strong>
+          </div>
+          <div id="marketNotes" class="notes"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Portfolio Liquidity</h2>
+            <button id="portfolioEditBtn" class="text-button" type="button">Edit</button>
+          </div>
+          <p class="panel-note">7-day liquidity across brokerage accounts, after safety discount.</p>
+          <div id="portfolioView" class="portfolio-view"></div>
+          <div class="metric-row">
+            <span>Total portfolio value</span>
+            <strong id="portfolioGross">--</strong>
+          </div>
+          <div class="metric-row">
+            <span>Safety discount</span>
+            <strong id="portfolioDiscount">--</strong>
+          </div>
+          <div class="metric-row total-row">
+            <span>Available liquidity</span>
+            <strong id="portfolioLiquidity">--</strong>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Watchlist</h2>
+          <form id="addTickerForm" class="ticker-form">
+            <input id="tickerInput" type="text" placeholder="Add ticker" autocomplete="off" maxlength="12">
+            <button type="submit" title="Add ticker">+</button>
+          </form>
+          <label class="toggle-line">
+            <input id="starredOnly" type="checkbox">
+            <span>Starred only</span>
+          </label>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Action Log</h2>
+            <button id="clearLogBtn" class="text-button" type="button">Clear</button>
+          </div>
+          <div id="actionLog" class="action-log"></div>
+        </section>
+
+        <button id="settingsBtn" class="settings-launch" type="button">Edit Global Settings</button>
+      </aside>
+
+      <main>
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Google Sheet plus live market prices</p>
+            <h2>Investment Candidates</h2>
+            <small id="autoRefreshNote" class="refresh-note">Auto-updates every 15 minutes. Refresh pulls sheet and quote data now.</small>
+          </div>
+          <div class="actions">
+            <button id="refreshBtn" type="button">Refresh</button>
+          </div>
+        </header>
+
+        <section class="summary-grid" aria-label="Scorecard summary">
+          <article>
+            <span>Total tickers</span>
+            <strong id="totalTickers">--</strong>
+          </article>
+          <article id="actionableCard" class="buy-summary clickable-card" tabindex="0" role="button">
+            <span>Actionable tickers</span>
+            <strong id="buyCount">--</strong>
+          </article>
+          <article>
+            <span>Needs scoring</span>
+            <strong id="needsScoringCount">--</strong>
+          </article>
+          <article>
+            <span>Last sync</span>
+            <strong id="lastSync">--</strong>
+          </article>
+        </section>
+
+        <section class="toolbar">
+          <div class="search-area">
+            <input id="searchInput" type="search" placeholder="Search ticker or action">
+            <button id="searchAddBtn" class="search-add" type="button" hidden></button>
+          </div>
+          <div class="segmented" role="group" aria-label="Filter by rating">
+            <button class="active" data-filter="all" type="button">All</button>
+            <button data-filter="actionable" type="button">Actionable</button>
+            <button data-filter="radar" type="button">Radar</button>
+            <button data-filter="needs-scoring" type="button">Needs scoring</button>
+          </div>
+          <button id="densityToggle" class="density-toggle" type="button" aria-pressed="false">Compact rows</button>
+        </section>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th></th>
+                <th><button class="sort-header" data-sort="symbol" type="button">Ticker</button></th>
+                <th><button class="sort-header" data-sort="score" type="button">Score</button></th>
+                <th><button class="sort-header" data-sort="percentOfIv" type="button">% of IV</button></th>
+                <th>Price</th>
+                <th>Intrinsic</th>
+                <th>EPS</th>
+                <th>Ratings</th>
+                <th>Potential Actions</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="scoreRows"></tbody>
+          </table>
+        </div>
+      </main>
+    </div>
+
+    <template id="rowTemplate">
+      <tr>
+        <td><button class="icon star-btn" type="button" title="Star ticker"></button></td>
+        <td>
+          <div class="ticker-cell">
+            <span class="ticker-logo"><img class="ticker-logo-img" alt=""></span>
+            <div>
+              <a class="symbol" target="_blank" rel="noreferrer"></a>
+              <small class="updated"></small>
+            </div>
+          </div>
+        </td>
+        <td><span class="score-pill"></span></td>
+        <td><span class="iv-percent"></span></td>
+        <td class="price"></td>
+        <td class="intrinsic"></td>
+        <td class="eps"></td>
+        <td><div class="harvey-set"></div></td>
+        <td><div class="potential-actions"></div></td>
+        <td><button class="icon remove-btn" type="button" title="Remove ticker"></button></td>
+      </tr>
+    </template>
+
+    <template id="accountTemplate">
+      <div class="account-row">
+        <span class="broker-logo"></span>
+        <select class="account-broker" aria-label="Brokerage"></select>
+        <input class="account-name" type="text" aria-label="Account nickname">
+        <input class="account-value" type="number" min="0" step="1000" aria-label="Account value">
+        <button class="icon account-remove" type="button" title="Remove account"></button>
+      </div>
+    </template>
+
+    <dialog id="portfolioDialog" class="modal">
+      <form id="portfolioForm" method="dialog">
+        <header>
+          <div>
+            <p class="eyebrow">Portfolio</p>
+            <h2>Edit Portfolio Liquidity</h2>
+          </div>
+          <button class="icon modal-close" value="cancel" type="submit" title="Close"></button>
+        </header>
+        <p class="modal-note">Use the combined value you could liquidate within about 7 days.</p>
+        <div id="accountsList" class="accounts-list"></div>
+        <button id="addAccountBtn" class="secondary-button" type="button">Add account</button>
+        <label class="field-line modal-percent">
+          <span>Safety discount</span>
+          <span class="percent-field"><input id="discountInput" type="number" min="0" max="95" step="1"><b>%</b></span>
+        </label>
+        <footer>
+          <button id="portfolioCancelBtn" class="secondary-button" value="cancel" type="submit">Cancel</button>
+          <button id="portfolioSaveBtn" class="primary-button" value="default" type="button">Save portfolio</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="logDialog" class="modal">
+      <form id="logForm" method="dialog">
+        <header>
+          <div>
+            <p class="eyebrow">Action Log</p>
+            <h2 id="logTitle">Log action</h2>
+          </div>
+          <button class="icon modal-close" value="cancel" type="submit" title="Close"></button>
+        </header>
+        <div class="log-security">
+          <span id="logLogo" class="ticker-logo"><img id="logLogoImg" class="ticker-logo-img" alt=""></span>
+          <div>
+            <strong id="logSecurityName">Ticker</strong>
+            <small id="logSecurityMeta"></small>
+          </div>
+        </div>
+        <div class="modal-grid">
+          <label><span>Action type</span><select id="logActionType"></select></label>
+          <label><span>Ticker</span><input id="logTicker" type="text" readonly></label>
+          <label><span>Portfolio %</span><input id="logPercent" type="number" min="0" step="0.1"></label>
+          <label><span>Dollar amount</span><input id="logAmount" type="number" min="0" step="100"></label>
+          <label><span>Date opened</span><input id="logDateOpened" type="date"></label>
+          <label><span id="logPriceLabel">Entry price</span><input id="logPrice" type="number" min="0" step="0.01"></label>
+          <label class="option-field"><span>Expiry date</span><input id="logExpiry" type="date"></label>
+          <label class="option-field"><span>DTE</span><input id="logDte" type="number" min="0" step="1"></label>
+          <label class="option-field"><span>Strike</span><input id="logStrike" type="number" min="0" step="0.01"></label>
+          <label class="option-field"><span>Delta</span><input id="logDelta" type="number" step="0.01"></label>
+          <label class="option-field"><span>Stock price then</span><input id="logStockPrice" type="number" min="0" step="0.01"></label>
+          <label class="option-field"><span>Strike vs stock</span><input id="logStrikeVsStock" type="text" readonly></label>
+        </div>
+        <label class="full-field"><span>Notes</span><textarea id="logNotes" rows="3"></textarea></label>
+        <footer>
+          <button class="secondary-button" value="cancel" type="submit">Cancel</button>
+          <button id="saveLogBtn" class="primary-button" value="default" type="button">Save log</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="settingsDialog" class="modal">
+      <form id="settingsForm" method="dialog">
+        <header>
+          <div>
+            <p class="eyebrow">Admin</p>
+            <h2>Data Settings</h2>
+          </div>
+          <button class="icon modal-close" value="cancel" type="submit" title="Close"></button>
+        </header>
+        <label class="full-field"><span>Google Sheet URL</span><input id="sheetUrlInput" type="url"></label>
+        <div class="modal-grid">
+          <label><span>AAA yield override</span><input id="aaaOverrideInput" type="number" min="0" step="0.1"></label>
+          <label><span>Bond yield override</span><input id="bondOverrideInput" type="number" min="0" step="0.1"></label>
+          <label><span>Symbol link destination</span><select id="linkProviderInput">
+            <option value="stockanalysis">StockAnalysis</option>
+            <option value="tradingview">TradingView</option>
+            <option value="barchart">Barchart</option>
+          </select></label>
+        </div>
+        <footer>
+          <button class="secondary-button" value="cancel" type="submit">Cancel</button>
+          <button id="saveSettingsBtn" class="primary-button" value="default" type="button">Save settings</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
