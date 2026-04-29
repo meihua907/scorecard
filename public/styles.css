@@ -185,40 +185,35 @@ h2 {
   line-height: 1.35;
 }
 
-.market-table {
-  width: 100%;
-  table-layout: fixed;
-  border-collapse: collapse;
-  color: rgba(255, 255, 255, 0.78);
+.market-list {
+  display: grid;
+  gap: 4px;
+  color: rgba(255, 255, 255, 0.8);
 }
 
-.market-table td {
-  padding: 8px 4px;
+.market-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   font-size: 0.8rem;
 }
 
-.market-table td:first-child {
-  display: table-cell;
-  align-items: center;
-  gap: 6px;
-  width: 48%;
+.market-row b {
+  min-width: 0;
+  overflow: hidden;
   font-weight: 650;
-}
-
-.market-value {
-  width: 24%;
-  font-weight: 720;
-  text-align: right;
-}
-
-.market-date {
-  width: 28%;
-  text-align: right;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.market-table span {
+.market-row strong {
+  font-weight: 760;
+}
+
+.market-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -226,22 +221,30 @@ h2 {
   height: 18px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.1);
-  margin-right: 6px;
 }
 
-.market-table .over span {
+.market-row.over .market-icon,
+.market-row.over strong {
   background: rgba(189, 61, 56, 0.24);
   color: #ff8f84;
 }
 
-.market-table .under span {
+.market-row.under .market-icon,
+.market-row.under strong {
   background: rgba(17, 132, 91, 0.22);
   color: #70e0ac;
 }
 
-.market-table .fair span {
+.market-row.fair .market-icon,
+.market-row.fair strong {
   background: rgba(255, 255, 255, 0.16);
   color: #f5e9a7;
+}
+
+.market-row strong {
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: transparent;
 }
 
 input,
@@ -419,7 +422,7 @@ select {
 
 main {
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 18px;
   min-width: 0;
   padding: 28px;
@@ -451,6 +454,43 @@ main {
 
 .actions button {
   padding: 10px 15px;
+}
+
+.page-tabs {
+  display: flex;
+  width: fit-content;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.page-tabs button {
+  border: 0;
+  border-right: 1px solid var(--line);
+  padding: 10px 14px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.page-tabs button:last-child {
+  border-right: 0;
+}
+
+.page-tabs button.active {
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.app-view {
+  display: none;
+  min-width: 0;
+}
+
+.app-view.active {
+  display: grid;
+  gap: 18px;
 }
 
 .summary-grid {
@@ -829,6 +869,19 @@ td small {
   background: var(--radar);
 }
 
+.action-chip.covered {
+  border-color: #dce4df;
+  background: #f6f8f6;
+}
+
+.action-chip.covered .status-dot {
+  background: #79847d;
+}
+
+.action-chip.covered strong {
+  color: var(--muted);
+}
+
 .log-button {
   grid-column: 1 / -1;
   justify-self: start;
@@ -973,6 +1026,161 @@ td small {
   resize: vertical;
 }
 
+.portfolio-toolbar,
+.portfolio-layout,
+.portfolio-summary-grid {
+  min-width: 0;
+}
+
+.portfolio-toolbar {
+  display: block;
+}
+
+.section-note,
+.portfolio-form label span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.section-note {
+  margin: 4px 0 0;
+}
+
+.portfolio-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.portfolio-summary-grid article,
+.portfolio-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 1px 0 rgba(17, 33, 27, 0.03);
+}
+
+.portfolio-summary-grid article {
+  padding: 14px 16px;
+}
+
+.portfolio-summary-grid span,
+.portfolio-summary-grid small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.portfolio-summary-grid strong {
+  display: block;
+  margin: 6px 0 2px;
+  font-size: 1.28rem;
+  font-weight: 680;
+}
+
+.portfolio-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.portfolio-card {
+  padding: 16px;
+}
+
+.text-button.light {
+  border-color: var(--line);
+  background: #fff;
+  color: var(--muted);
+}
+
+.portfolio-form {
+  display: grid;
+  grid-template-columns: 0.7fr 1fr 0.8fr 0.8fr 1fr auto;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.portfolio-form.option-entry {
+  grid-template-columns: 0.7fr 1fr 0.8fr 0.8fr 1fr 1fr auto;
+}
+
+.portfolio-form.account-entry {
+  grid-template-columns: 1fr 1fr 0.9fr auto;
+  align-items: end;
+}
+
+.portfolio-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.portfolio-form button {
+  border: 0;
+  border-radius: 7px;
+  padding: 0 13px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 650;
+}
+
+.portfolio-list {
+  display: grid;
+  gap: 8px;
+}
+
+.portfolio-list-row {
+  display: grid;
+  grid-template-columns: 0.8fr 1fr 0.8fr 0.8fr minmax(120px, 1fr) 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+  font-size: 0.84rem;
+}
+
+.portfolio-list-row.account-list-row {
+  grid-template-columns: 34px minmax(120px, 1fr) 1fr 0.8fr auto 34px;
+}
+
+.account-inline-editor {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr 0.9fr auto;
+  gap: 8px;
+  width: 100%;
+}
+
+.account-inline-editor input,
+.account-inline-editor select {
+  min-height: 38px;
+}
+
+.portfolio-list-row small {
+  color: var(--muted);
+}
+
+.remove-holding,
+.remove-option {
+  color: var(--danger);
+}
+
+.remove-holding::before,
+.remove-option::before {
+  content: "\00d7";
+}
+
+.portfolio-empty {
+  margin: 0;
+  padding: 18px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  text-align: center;
+}
+
 .compact-rows th,
 .compact-rows td {
   padding: 7px 10px;
@@ -1029,6 +1237,23 @@ td small {
 
   .summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .portfolio-summary-grid,
+  .portfolio-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-form,
+  .portfolio-form.option-entry,
+  .portfolio-form.account-entry,
+  .account-inline-editor,
+  .portfolio-list-row {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-form button {
+    min-height: 42px;
   }
 
   .segmented {

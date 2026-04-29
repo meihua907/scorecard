@@ -86,58 +86,162 @@
           </div>
         </header>
 
-        <section class="summary-grid" aria-label="Scorecard summary">
-          <article>
-            <span>Total tickers</span>
-            <strong id="totalTickers">--</strong>
-          </article>
-          <article id="actionableCard" class="buy-summary clickable-card" tabindex="0" role="button">
-            <span>Actionable tickers</span>
-            <strong id="buyCount">--</strong>
-          </article>
-          <article>
-            <span>Needs scoring</span>
-            <strong id="needsScoringCount">--</strong>
-          </article>
-          <article>
-            <span>Last sync</span>
-            <strong id="lastSync">--</strong>
-          </article>
+        <nav class="page-tabs" aria-label="Main views">
+          <button class="active" data-view="candidates" type="button">Investment Candidates</button>
+          <button data-view="portfolio" type="button">My Portfolio</button>
+        </nav>
+
+        <section id="candidatesView" class="app-view active">
+          <section class="summary-grid" aria-label="Scorecard summary">
+            <article>
+              <span>Total tickers</span>
+              <strong id="totalTickers">--</strong>
+            </article>
+            <article id="actionableCard" class="buy-summary clickable-card" tabindex="0" role="button">
+              <span>Actionable tickers</span>
+              <strong id="buyCount">--</strong>
+            </article>
+            <article>
+              <span>Needs scoring</span>
+              <strong id="needsScoringCount">--</strong>
+            </article>
+            <article>
+              <span>Last sync</span>
+              <strong id="lastSync">--</strong>
+            </article>
+          </section>
+
+          <section class="toolbar">
+            <div class="search-area">
+              <input id="searchInput" type="search" placeholder="Search ticker or action">
+              <button id="searchAddBtn" class="search-add" type="button" hidden></button>
+            </div>
+            <div class="segmented" role="group" aria-label="Filter by rating">
+              <button class="active" data-filter="all" type="button">All</button>
+              <button data-filter="actionable" type="button">Actionable</button>
+              <button data-filter="radar" type="button">Radar</button>
+              <button data-filter="needs-scoring" type="button">Needs scoring</button>
+            </div>
+            <button id="densityToggle" class="density-toggle" type="button" aria-pressed="false">Compact rows</button>
+          </section>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th></th>
+                  <th><button class="sort-header" data-sort="symbol" type="button">Ticker</button></th>
+                  <th><button class="sort-header" data-sort="score" type="button">Score</button></th>
+                  <th><button class="sort-header" data-sort="percentOfIv" type="button">% of IV</button></th>
+                  <th>Price</th>
+                  <th>Intrinsic</th>
+                  <th>EPS</th>
+                  <th>Ratings</th>
+                  <th>Potential Actions</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="scoreRows"></tbody>
+            </table>
+          </div>
         </section>
 
-        <section class="toolbar">
-          <div class="search-area">
-            <input id="searchInput" type="search" placeholder="Search ticker or action">
-            <button id="searchAddBtn" class="search-add" type="button" hidden></button>
-          </div>
-          <div class="segmented" role="group" aria-label="Filter by rating">
-            <button class="active" data-filter="all" type="button">All</button>
-            <button data-filter="actionable" type="button">Actionable</button>
-            <button data-filter="radar" type="button">Radar</button>
-            <button data-filter="needs-scoring" type="button">Needs scoring</button>
-          </div>
-          <button id="densityToggle" class="density-toggle" type="button" aria-pressed="false">Compact rows</button>
-        </section>
+        <section id="portfolioViewPage" class="app-view portfolio-page">
+          <section class="portfolio-toolbar">
+            <div>
+              <p class="eyebrow">Portfolio Workspace</p>
+              <h2>My Portfolio</h2>
+              <p class="section-note">One portfolio can include multiple brokerage accounts, and a brokerage can have more than one account.</p>
+            </div>
+          </section>
 
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th></th>
-                <th><button class="sort-header" data-sort="symbol" type="button">Ticker</button></th>
-                <th><button class="sort-header" data-sort="score" type="button">Score</button></th>
-                <th><button class="sort-header" data-sort="percentOfIv" type="button">% of IV</button></th>
-                <th>Price</th>
-                <th>Intrinsic</th>
-                <th>EPS</th>
-                <th>Ratings</th>
-                <th>Potential Actions</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="scoreRows"></tbody>
-          </table>
-        </div>
+          <article class="portfolio-card accounts-card">
+            <div class="panel-heading">
+              <h2>Brokerage Accounts</h2>
+            </div>
+            <form id="workspaceAccountForm" class="portfolio-form account-entry">
+              <label>
+                <span>Brokerage</span>
+                <select id="workspaceAccountBroker" aria-label="Brokerage"></select>
+              </label>
+              <label>
+                <span>Account name</span>
+                <input id="workspaceAccountName" type="text" placeholder="Primary brokerage">
+              </label>
+              <label>
+                <span>7-day liquidity value</span>
+                <input id="workspaceAccountValue" type="number" min="0" step="1000" placeholder="250000">
+              </label>
+              <button type="submit">Add account</button>
+            </form>
+            <div id="workspaceAccountsList" class="portfolio-list"></div>
+          </article>
+
+          <section class="portfolio-summary-grid">
+            <article>
+              <span>Total value</span>
+              <strong id="portfolioPageTotal">--</strong>
+            </article>
+            <article>
+              <span>Index ETF allocation</span>
+              <strong id="portfolioIndexAllocation">--</strong>
+              <small>Aspirational goal: 70-80%</small>
+            </article>
+            <article>
+              <span>Single ticker allocation</span>
+              <strong id="portfolioSingleAllocation">--</strong>
+              <small>Aspirational goal: 20-30%</small>
+            </article>
+            <article>
+              <span>Open option exposure</span>
+              <strong id="portfolioOptionExposure">--</strong>
+            </article>
+          </section>
+
+          <section class="portfolio-layout">
+            <article class="portfolio-card">
+              <div class="panel-heading">
+                <h2>Holdings</h2>
+                <button id="seedDemoPortfolioBtn" class="text-button light" type="button">Load demo</button>
+              </div>
+              <form id="holdingForm" class="portfolio-form">
+                <input id="holdingSymbol" type="text" placeholder="Ticker" maxlength="12">
+                <select id="holdingType">
+                  <option value="index">Index ETF</option>
+                  <option value="single">Single ticker</option>
+                  <option value="bond">Bond / income</option>
+                  <option value="other">Other</option>
+                </select>
+                <input id="holdingShares" type="number" min="0" step="0.01" placeholder="Shares">
+                <input id="holdingCost" type="number" min="0" step="0.01" placeholder="Avg cost">
+                <select id="holdingAccount"></select>
+                <button type="submit">Add</button>
+              </form>
+              <div id="holdingsList" class="portfolio-list"></div>
+            </article>
+
+            <article class="portfolio-card">
+              <div class="panel-heading">
+                <h2>Open Options</h2>
+                <button id="clearPortfolioDemoBtn" class="text-button light" type="button">Clear portfolio</button>
+              </div>
+              <form id="optionForm" class="portfolio-form option-entry">
+                <input id="optionSymbol" type="text" placeholder="Ticker" maxlength="12">
+                <select id="optionType">
+                  <option value="puts">Sold puts</option>
+                  <option value="calls">Bought calls</option>
+                  <option value="covered-calls">Sold covered calls</option>
+                </select>
+                <input id="optionContracts" type="number" min="0" step="1" placeholder="Contracts">
+                <input id="optionStrike" type="number" min="0" step="0.01" placeholder="Strike">
+                <input id="optionExpiry" type="date">
+                <select id="optionAccount"></select>
+                <button type="submit">Add</button>
+              </form>
+              <div id="optionsList" class="portfolio-list"></div>
+            </article>
+          </section>
+        </section>
       </main>
     </div>
 
@@ -183,16 +287,15 @@
           </div>
           <button class="icon modal-close" value="cancel" type="submit" title="Close"></button>
         </header>
-        <p class="modal-note">Use the combined value you could liquidate within about 7 days.</p>
-        <div id="accountsList" class="accounts-list"></div>
-        <button id="addAccountBtn" class="secondary-button" type="button">Add account</button>
+        <p class="modal-note">Portfolio accounts are managed in My Portfolio. This panel only controls the safety haircut used for 7-day liquidity.</p>
         <label class="field-line modal-percent">
           <span>Safety discount</span>
           <span class="percent-field"><input id="discountInput" type="number" min="0" max="95" step="1"><b>%</b></span>
         </label>
         <footer>
+          <button id="openPortfolioTabBtn" class="secondary-button" value="cancel" type="button">Edit my portfolio</button>
           <button id="portfolioCancelBtn" class="secondary-button" value="cancel" type="submit">Cancel</button>
-          <button id="portfolioSaveBtn" class="primary-button" value="default" type="button">Save portfolio</button>
+          <button id="portfolioSaveBtn" class="primary-button" value="default" type="button">Save discount</button>
         </footer>
       </form>
     </dialog>

@@ -27,6 +27,31 @@ const whiteLogoSymbols = new Set([
   "CELH", "GS", "WFC", "GOOG", "ORCL", "PGR", "AZP", "BABA", "JPN", "NOW",
   "DAL", "QCOM", "FDX", "AMAT", "TSLA", "HD", "PYPL", "SHOP", "WMT", "CRWD", "COST",
 ]);
+const indexProxySymbols = new Set(["VOO", "SPY", "IVV", "QQQ", "QQQM", "VTI"]);
+
+const defaultWorkspace = {
+  activePortfolioId: "primary",
+  portfolios: [
+    {
+      id: "primary",
+      name: "Primary portfolio",
+      primary: true,
+      accounts: [
+        { id: "acct-main", broker: "schwab", name: "Primary brokerage", value: 250000 },
+        { id: "acct-retirement", broker: "fidelity", name: "Retirement brokerage", value: 150000 },
+      ],
+      holdings: [
+        { id: crypto.randomUUID(), symbol: "VOO", type: "index", shares: 40, avgCost: 580, accountId: "acct-main" },
+        { id: crypto.randomUUID(), symbol: "QQQ", type: "index", shares: 25, avgCost: 610, accountId: "acct-main" },
+        { id: crypto.randomUUID(), symbol: "META", type: "single", shares: 8, avgCost: 590, accountId: "acct-main" },
+      ],
+      options: [
+        { id: crypto.randomUUID(), symbol: "HOOD", type: "puts", contracts: 1, strike: 75, expiry: "", accountId: "acct-main" },
+        { id: crypto.randomUUID(), symbol: "NVDA", type: "puts", contracts: 1, strike: 190, expiry: "", accountId: "acct-main" },
+      ],
+    },
+  ],
+};
 
 const state = {
   rows: [],
@@ -35,6 +60,7 @@ const state = {
   starred: new Set(JSON.parse(localStorage.getItem("starredTickers") || "[]")),
   added: JSON.parse(localStorage.getItem("addedTickers") || "[]"),
   portfolio: normalizePortfolio(JSON.parse(localStorage.getItem("portfolioLiquidity") || "null") || defaultPortfolio),
+  workspace: normalizeWorkspace(JSON.parse(localStorage.getItem("portfolioWorkspace") || "null") || defaultWorkspace),
   portfolioDraft: null,
   settings: JSON.parse(localStorage.getItem("scorecardSettings") || "null") || {
     sheetUrl: defaultSheetUrl,
@@ -50,8 +76,16 @@ const state = {
   starredOnly: false,
   compactRows: JSON.parse(localStorage.getItem("compactRows") || "false"),
   sidebarCollapsed: JSON.parse(localStorage.getItem("sidebarCollapsed") || "false"),
+  activeView: localStorage.getItem("activeView") || "candidates",
   lastSync: null,
+  remotePersistenceReady: false,
 };
+
+let remoteSaveTimer = null;
+
+if (!localStorage.getItem("portfolioWorkspace") && localStorage.getItem("portfolioLiquidity")) {
+  state.workspace.portfolios[0].accounts = state.portfolio.accounts;
+}
 
 const els = {
   appShell: document.querySelector(".app-shell"),
@@ -69,6 +103,35 @@ const els = {
   searchInput: document.querySelector("#searchInput"),
   searchAddBtn: document.querySelector("#searchAddBtn"),
   densityToggle: document.querySelector("#densityToggle"),
+  pageTabs: document.querySelectorAll(".page-tabs button"),
+  candidatesView: document.querySelector("#candidatesView"),
+  portfolioViewPage: document.querySelector("#portfolioViewPage"),
+  portfolioPageTotal: document.querySelector("#portfolioPageTotal"),
+  portfolioIndexAllocation: document.querySelector("#portfolioIndexAllocation"),
+  portfolioSingleAllocation: document.querySelector("#portfolioSingleAllocation"),
+  portfolioOptionExposure: document.querySelector("#portfolioOptionExposure"),
+  holdingsList: document.querySelector("#holdingsList"),
+  optionsList: document.querySelector("#optionsList"),
+  workspaceAccountsList: document.querySelector("#workspaceAccountsList"),
+  workspaceAccountForm: document.querySelector("#workspaceAccountForm"),
+  workspaceAccountBroker: document.querySelector("#workspaceAccountBroker"),
+  workspaceAccountName: document.querySelector("#workspaceAccountName"),
+  workspaceAccountValue: document.querySelector("#workspaceAccountValue"),
+  holdingForm: document.querySelector("#holdingForm"),
+  holdingSymbol: document.querySelector("#holdingSymbol"),
+  holdingType: document.querySelector("#holdingType"),
+  holdingShares: document.querySelector("#holdingShares"),
+  holdingCost: document.querySelector("#holdingCost"),
+  holdingAccount: document.querySelector("#holdingAccount"),
+  optionForm: document.querySelector("#optionForm"),
+  optionSymbol: document.querySelector("#optionSymbol"),
+  optionType: document.querySelector("#optionType"),
+  optionContracts: document.querySelector("#optionContracts"),
+  optionStrike: document.querySelector("#optionStrike"),
+  optionExpiry: document.querySelector("#optionExpiry"),
+  optionAccount: document.querySelector("#optionAccount"),
+  seedDemoPortfolioBtn: document.querySelector("#seedDemoPortfolioBtn"),
+  clearPortfolioDemoBtn: document.querySelector("#clearPortfolioDemoBtn"),
   refreshBtn: document.querySelector("#refreshBtn"),
   addTickerForm: document.querySelector("#addTickerForm"),
   tickerInput: document.querySelector("#tickerInput"),
@@ -81,6 +144,7 @@ const els = {
   portfolioEditBtn: document.querySelector("#portfolioEditBtn"),
   portfolioSaveBtn: document.querySelector("#portfolioSaveBtn"),
   portfolioCancelBtn: document.querySelector("#portfolioCancelBtn"),
+  openPortfolioTabBtn: document.querySelector("#openPortfolioTabBtn"),
   portfolioGross: document.querySelector("#portfolioGross"),
   portfolioDiscount: document.querySelector("#portfolioDiscount"),
   portfolioLiquidity: document.querySelector("#portfolioLiquidity"),
@@ -170,11 +234,85 @@ function persist() {
   localStorage.setItem("removedTickers", JSON.stringify([...state.removed]));
   localStorage.setItem("starredTickers", JSON.stringify([...state.starred]));
   localStorage.setItem("addedTickers", JSON.stringify(state.added));
-  localStorage.setItem("portfolioLiquidity", JSON.stringify({ ...state.portfolio, editing: false }));
+  localStorage.setItem("portfolioLiquidity", JSON.stringify({ ...liquidityPortfolio(), editing: false }));
   localStorage.setItem("scorecardSettings", JSON.stringify(state.settings));
   localStorage.setItem("actionLog", JSON.stringify(state.actionLog));
+  localStorage.setItem("portfolioWorkspace", JSON.stringify(state.workspace));
   localStorage.setItem("compactRows", JSON.stringify(state.compactRows));
   localStorage.setItem("sidebarCollapsed", JSON.stringify(state.sidebarCollapsed));
+  localStorage.setItem("activeView", state.activeView);
+  queueRemoteSave();
+}
+
+function workspacePayload() {
+  const liquidity = liquidityPortfolio();
+  return {
+    settings: state.settings,
+    workspace: state.workspace,
+    portfolioLiquidity: { discount: Number(liquidity.discount) || 0 },
+    actionLog: state.actionLog,
+    userPrefs: {
+      removed: [...state.removed],
+      starred: [...state.starred],
+      added: state.added,
+      compactRows: state.compactRows,
+      sidebarCollapsed: state.sidebarCollapsed,
+      activeView: state.activeView,
+    },
+  };
+}
+
+function applyWorkspacePayload(payload) {
+  if (!payload || typeof payload !== "object") return;
+  if (payload.settings) state.settings = { ...state.settings, ...payload.settings };
+  if (payload.workspace) state.workspace = normalizeWorkspace(payload.workspace);
+  if (payload.portfolioLiquidity) {
+    state.portfolio = normalizePortfolio({
+      ...state.portfolio,
+      discount: Number(payload.portfolioLiquidity.discount ?? state.portfolio.discount) || 0,
+      accounts: liquidityPortfolio().accounts,
+    });
+  }
+  if (Array.isArray(payload.actionLog)) state.actionLog = payload.actionLog;
+  if (payload.userPrefs) {
+    state.removed = new Set(Array.isArray(payload.userPrefs.removed) ? payload.userPrefs.removed : []);
+    state.starred = new Set(Array.isArray(payload.userPrefs.starred) ? payload.userPrefs.starred : []);
+    state.added = Array.isArray(payload.userPrefs.added) ? payload.userPrefs.added : [];
+    state.compactRows = Boolean(payload.userPrefs.compactRows);
+    state.sidebarCollapsed = Boolean(payload.userPrefs.sidebarCollapsed);
+    state.activeView = payload.userPrefs.activeView || state.activeView;
+  }
+}
+
+function queueRemoteSave() {
+  if (!state.remotePersistenceReady) return;
+  clearTimeout(remoteSaveTimer);
+  remoteSaveTimer = setTimeout(() => saveRemoteWorkspace().catch((error) => {
+    console.warn("Workspace save failed", error);
+  }), 500);
+}
+
+async function loadRemoteWorkspace() {
+  try {
+    const response = await fetch("/api/workspace");
+    if (!response.ok) throw new Error(`Workspace load failed: ${response.status}`);
+    const data = await response.json();
+    if (data.hasData && data.payload) applyWorkspacePayload(data.payload);
+  } catch (error) {
+    console.warn("Workspace persistence unavailable; using browser storage", error);
+  } finally {
+    state.remotePersistenceReady = true;
+    persist();
+  }
+}
+
+async function saveRemoteWorkspace() {
+  const response = await fetch("/api/workspace", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(workspacePayload()),
+  });
+  if (!response.ok) throw new Error(`Workspace save failed: ${response.status}`);
 }
 
 function brokerById(id) {
@@ -212,14 +350,113 @@ function normalizePortfolio(portfolio) {
   };
 }
 
+function normalizeWorkspace(workspace) {
+  const source = workspace || defaultWorkspace;
+  const portfolios = Array.isArray(source.portfolios) && source.portfolios.length ? source.portfolios : defaultWorkspace.portfolios;
+  const normalized = portfolios.map((portfolio, index) => {
+    const accounts = Array.isArray(portfolio.accounts) && portfolio.accounts.length
+      ? portfolio.accounts
+      : defaultPortfolio.accounts;
+    return {
+      id: portfolio.id || crypto.randomUUID(),
+      name: portfolio.name || `Portfolio ${index + 1}`,
+      primary: Boolean(portfolio.primary || index === 0),
+      accounts: normalizePortfolio({ accounts, discount: 0 }).accounts,
+      holdings: (portfolio.holdings || []).map((holding) => ({
+        id: holding.id || crypto.randomUUID(),
+        symbol: cleanTicker(holding.symbol),
+        type: holding.type || (indexProxySymbols.has(cleanTicker(holding.symbol)) ? "index" : "single"),
+        shares: Number(holding.shares) || 0,
+        avgCost: Number(holding.avgCost) || 0,
+        accountId: holding.accountId || accounts[0]?.id || "",
+      })).filter((holding) => holding.symbol),
+      options: (portfolio.options || []).map((option) => ({
+        id: option.id || crypto.randomUUID(),
+        symbol: cleanTicker(option.symbol),
+        type: option.type || "puts",
+        contracts: Number(option.contracts) || 0,
+        strike: Number(option.strike) || 0,
+        expiry: option.expiry || "",
+        accountId: option.accountId || accounts[0]?.id || "",
+      })).filter((option) => option.symbol),
+    };
+  });
+  if (!normalized.some((portfolio) => portfolio.primary)) normalized[0].primary = true;
+  const activePortfolioId = normalized.some((portfolio) => portfolio.id === source.activePortfolioId)
+    ? source.activePortfolioId
+    : normalized.find((portfolio) => portfolio.primary)?.id || normalized[0].id;
+  return { activePortfolioId, portfolios: normalized };
+}
+
 function brokerLogoUrl(broker) {
   return broker.domain ? `https://www.google.com/s2/favicons?domain=${broker.domain}&sz=64` : "";
 }
 
-function portfolioTotals(portfolio = state.portfolio) {
+function liquidityPortfolio() {
+  const primary = primaryPortfolio();
+  return {
+    discount: Number(state.portfolio?.discount ?? defaultPortfolio.discount) || 0,
+    accounts: primary?.accounts?.length ? primary.accounts : normalizePortfolio(state.portfolio).accounts,
+  };
+}
+
+function portfolioTotals(portfolio = liquidityPortfolio()) {
   const gross = portfolio.accounts.reduce((sum, account) => sum + (Number(account.value) || 0), 0);
   const discount = gross * ((Number(portfolio.discount) || 0) / 100);
   return { gross, discount, liquidity: gross - discount };
+}
+
+function activePortfolio() {
+  return primaryPortfolio();
+}
+
+function primaryPortfolio() {
+  return state.workspace.portfolios.find((portfolio) => portfolio.primary) || state.workspace.portfolios[0];
+}
+
+function quotePrice(symbol, fallback = 0) {
+  const quoteSymbol = cleanTicker(symbol).replace(".", "-");
+  const quote = state.quotes[quoteSymbol];
+  return Number(quote?.price) || Number(fallback) || 0;
+}
+
+function holdingValue(holding) {
+  return (Number(holding.shares) || 0) * quotePrice(holding.symbol, holding.avgCost);
+}
+
+function optionExposure(option) {
+  return (Number(option.contracts) || 0) * 100 * (Number(option.strike) || quotePrice(option.symbol));
+}
+
+function portfolioStats(portfolio = activePortfolio()) {
+  const holdings = portfolio?.holdings || [];
+  const total = holdings.reduce((sum, holding) => sum + holdingValue(holding), 0);
+  const index = holdings
+    .filter((holding) => holding.type === "index" || indexProxySymbols.has(holding.symbol))
+    .reduce((sum, holding) => sum + holdingValue(holding), 0);
+  const single = holdings
+    .filter((holding) => holding.type === "single")
+    .reduce((sum, holding) => sum + holdingValue(holding), 0);
+  const optionExposureTotal = (portfolio?.options || []).reduce((sum, option) => sum + optionExposure(option), 0);
+  return {
+    total,
+    index,
+    single,
+    indexPct: total ? (index / total) * 100 : 0,
+    singlePct: total ? (single / total) * 100 : 0,
+    optionExposure: optionExposureTotal,
+  };
+}
+
+function exposureForSymbol(symbol, portfolio = primaryPortfolio()) {
+  const clean = cleanTicker(symbol);
+  const holdings = portfolio?.holdings || [];
+  const options = portfolio?.options || [];
+  return {
+    shares: holdings.some((holding) => holding.symbol === clean && Number(holding.shares) > 0),
+    puts: options.some((option) => option.symbol === clean && option.type === "puts"),
+    calls: options.some((option) => option.symbol === clean && ["calls", "covered-calls"].includes(option.type)),
+  };
 }
 
 function actionStatus(raw) {
@@ -397,10 +634,11 @@ function renderSummary(rows) {
 }
 
 function renderPortfolio() {
-  state.portfolio = normalizePortfolio(state.portfolio);
-  const totals = portfolioTotals();
+  state.portfolio = normalizePortfolio({ ...state.portfolio, accounts: liquidityPortfolio().accounts });
+  const liquidity = liquidityPortfolio();
+  const totals = portfolioTotals(liquidity);
   els.portfolioGross.textContent = fmt.money(totals.gross);
-  els.portfolioDiscount.textContent = `${fmt.money(totals.discount)} (${fmt.percent(state.portfolio.discount)})`;
+  els.portfolioDiscount.textContent = `${fmt.money(totals.discount)} (${fmt.percent(liquidity.discount)})`;
   els.portfolioLiquidity.textContent = fmt.money(totals.liquidity);
   els.portfolioEditBtn.textContent = "Edit";
   els.portfolioEditBtn.disabled = false;
@@ -409,7 +647,7 @@ function renderPortfolio() {
 
 function renderPortfolioView() {
   els.portfolioView.replaceChildren();
-  for (const account of state.portfolio.accounts) {
+  for (const account of liquidityPortfolio().accounts) {
     const broker = brokerById(account.broker);
     const item = document.createElement("div");
     item.className = "portfolio-account";
@@ -426,42 +664,6 @@ function renderPortfolioEditor() {
   const draft = state.portfolioDraft;
   if (!draft) return;
   els.discountInput.value = draft.discount;
-  els.accountsList.replaceChildren();
-  for (const account of draft.accounts) {
-    const fragment = els.accountTemplate.content.cloneNode(true);
-    const brokerSelect = fragment.querySelector(".account-broker");
-    const logo = fragment.querySelector(".broker-logo");
-    const name = fragment.querySelector(".account-name");
-    const value = fragment.querySelector(".account-value");
-    const remove = fragment.querySelector(".account-remove");
-
-    for (const broker of brokers) {
-      const option = document.createElement("option");
-      option.value = broker.id;
-      option.textContent = broker.name;
-      brokerSelect.append(option);
-    }
-    brokerSelect.value = account.broker || "other";
-    name.value = account.name || "";
-    value.value = account.value || 0;
-
-    const syncLogo = () => {
-      const broker = brokerById(brokerSelect.value);
-      logo.innerHTML = brokerLogoUrl(broker) ? `<img alt="" src="${brokerLogoUrl(broker)}">` : broker.name.slice(0, 2);
-    };
-    syncLogo();
-    brokerSelect.addEventListener("change", () => {
-      account.broker = brokerSelect.value;
-      syncLogo();
-    });
-    name.addEventListener("input", () => { account.name = name.value; });
-    value.addEventListener("input", () => { account.value = Number(value.value) || 0; });
-    remove.addEventListener("click", () => {
-      draft.accounts = draft.accounts.filter((item) => item.id !== account.id);
-      renderPortfolioEditor();
-    });
-    els.accountsList.append(fragment);
-  }
 }
 
 function renderActionLog() {
@@ -533,14 +735,22 @@ function actionsForRow(row) {
 
 function renderPotentialActions(container, row) {
   const actions = actionsForRow(row);
+  const exposure = exposureForSymbol(row.symbol);
   container.replaceChildren();
 
   for (const action of actions) {
     const logged = logsFor(row, action);
+    const alreadyCovered = (action.type === "shares" && exposure.shares)
+      || (action.type === "puts" && exposure.puts)
+      || (action.type === "calls" && exposure.calls);
     const chip = document.createElement("div");
-    chip.className = `action-chip ${action.status} ${logged.length ? "logged" : ""}`;
-    chip.title = `${actionTooltip(action, row)}${logged.length ? `\nLogged: ${logged.length} action(s), ${fmt.money(logged.reduce((sum, item) => sum + Number(item.amount || 0), 0))}` : ""}`;
-    const detail = action.status === "yes" && action.amount
+    chip.className = `action-chip ${alreadyCovered ? "covered" : action.status} ${logged.length ? "logged" : ""}`;
+    chip.title = alreadyCovered
+      ? `${action.label}: hidden as a new action because the primary portfolio already has ${action.type === "shares" ? "shares" : `open ${action.label.toLowerCase()}`} exposure.`
+      : `${actionTooltip(action, row)}${logged.length ? `\nLogged: ${logged.length} action(s), ${fmt.money(logged.reduce((sum, item) => sum + Number(item.amount || 0), 0))}` : ""}`;
+    const detail = alreadyCovered
+      ? action.type === "shares" ? "Owned" : "Open"
+      : action.status === "yes" && action.amount
       ? fmt.money(action.amount)
       : action.status === "radar"
         ? "Radar"
@@ -552,7 +762,7 @@ function renderPotentialActions(container, row) {
       badge.textContent = `${logged.length} logged`;
       chip.append(badge);
     }
-    if (action.status === "yes") {
+    if (action.status === "yes" && !alreadyCovered) {
       const log = document.createElement("button");
       log.type = "button";
       log.className = "log-button";
@@ -667,6 +877,189 @@ function renderSearchSuggestion(rows = mergedRows()) {
   els.searchAddBtn.title = canAdd ? `Add ${symbol} to the watchlist` : "";
 }
 
+function renderPortfolioWorkspace() {
+  state.workspace = normalizeWorkspace(state.workspace);
+  const portfolio = activePortfolio();
+  const stats = portfolioStats(portfolio);
+  renderBrokerOptions(els.workspaceAccountBroker);
+  els.portfolioPageTotal.textContent = fmt.money(stats.total);
+  els.portfolioIndexAllocation.textContent = fmt.percent(stats.indexPct);
+  els.portfolioSingleAllocation.textContent = fmt.percent(stats.singlePct);
+  els.portfolioOptionExposure.textContent = fmt.money(stats.optionExposure);
+  renderWorkspaceAccounts(portfolio);
+  renderPortfolioAccountOptions(portfolio);
+  renderHoldings(portfolio);
+  renderOptions(portfolio);
+  renderPortfolio();
+  renderActionLog();
+}
+
+function renderBrokerOptions(select, selected = "schwab") {
+  select.replaceChildren();
+  for (const broker of brokers) {
+    const option = document.createElement("option");
+    option.value = broker.id;
+    option.textContent = broker.name;
+    select.append(option);
+  }
+  select.value = selected;
+}
+
+function renderWorkspaceAccounts(portfolio) {
+  els.workspaceAccountsList.replaceChildren();
+  if (!portfolio.accounts.length) {
+    const empty = document.createElement("p");
+    empty.className = "portfolio-empty";
+    empty.textContent = "No brokerage accounts yet.";
+    els.workspaceAccountsList.append(empty);
+    return;
+  }
+  for (const account of portfolio.accounts) {
+    const broker = brokerById(account.broker);
+    const row = document.createElement("div");
+    row.className = "portfolio-list-row account-list-row";
+    row.innerHTML = `
+      <span class="broker-logo">${brokerLogoUrl(broker) ? `<img alt="" src="${brokerLogoUrl(broker)}">` : broker.name.slice(0, 2)}</span>
+      <strong>${account.name || broker.name}</strong>
+      <span>${broker.name}</span>
+      <span>${fmt.money(Number(account.value) || 0)}</span>
+      <button class="secondary-button account-edit" type="button">Edit</button>
+      <button class="icon remove-account" type="button" title="Remove account"></button>
+    `;
+    row.querySelector(".account-edit").addEventListener("click", () => {
+      row.replaceChildren(renderAccountInlineEditor(portfolio, account));
+    });
+    row.querySelector(".remove-account").addEventListener("click", () => {
+      portfolio.accounts = portfolio.accounts.filter((item) => item.id !== account.id);
+      const fallbackAccountId = portfolio.accounts[0]?.id || "";
+      portfolio.holdings.forEach((holding) => {
+        if (holding.accountId === account.id) holding.accountId = fallbackAccountId;
+      });
+      portfolio.options.forEach((option) => {
+        if (option.accountId === account.id) option.accountId = fallbackAccountId;
+      });
+      persist();
+      renderPortfolioWorkspace();
+      renderRows();
+    });
+    els.workspaceAccountsList.append(row);
+  }
+}
+
+function renderAccountInlineEditor(portfolio, account) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "account-inline-editor";
+  const brokerSelect = document.createElement("select");
+  renderBrokerOptions(brokerSelect, account.broker || "other");
+  const name = document.createElement("input");
+  name.type = "text";
+  name.value = account.name || "";
+  name.placeholder = "Account nickname";
+  const value = document.createElement("input");
+  value.type = "number";
+  value.min = "0";
+  value.step = "1000";
+  value.value = account.value || 0;
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "primary-button";
+  save.textContent = "Save";
+  save.addEventListener("click", () => {
+    account.broker = brokerSelect.value;
+    account.name = name.value || brokerById(account.broker).name;
+    account.value = Number(value.value) || 0;
+    persist();
+    renderPortfolioWorkspace();
+    renderRows();
+  });
+  wrapper.append(brokerSelect, name, value, save);
+  return wrapper;
+}
+
+function renderPortfolioAccountOptions(portfolio) {
+  for (const select of [els.holdingAccount, els.optionAccount]) {
+    select.replaceChildren();
+    for (const account of portfolio.accounts) {
+      const option = document.createElement("option");
+      option.value = account.id;
+      option.textContent = account.name;
+      select.append(option);
+    }
+  }
+}
+
+function renderHoldings(portfolio) {
+  els.holdingsList.replaceChildren();
+  if (!portfolio.holdings.length) {
+    const empty = document.createElement("p");
+    empty.className = "portfolio-empty";
+    empty.textContent = "No holdings yet. Add shares manually or load demo data.";
+    els.holdingsList.append(empty);
+    return;
+  }
+  for (const holding of portfolio.holdings) {
+    const account = portfolio.accounts.find((item) => item.id === holding.accountId);
+    const row = document.createElement("div");
+    row.className = "portfolio-list-row";
+    row.innerHTML = `
+      <strong>${holding.symbol}</strong>
+      <span>${holding.type.replace("-", " ")}</span>
+      <span>${fmt.number(holding.shares, 2)} sh</span>
+      <span>${fmt.money(holdingValue(holding))}</span>
+      <small>${account?.name || "Unassigned"}</small>
+      <button class="icon remove-holding" type="button" title="Remove holding"></button>
+    `;
+    row.querySelector(".remove-holding").addEventListener("click", () => {
+      portfolio.holdings = portfolio.holdings.filter((item) => item.id !== holding.id);
+      persist();
+      renderPortfolioWorkspace();
+      renderRows();
+    });
+    els.holdingsList.append(row);
+  }
+}
+
+function renderOptions(portfolio) {
+  els.optionsList.replaceChildren();
+  if (!portfolio.options.length) {
+    const empty = document.createElement("p");
+    empty.className = "portfolio-empty";
+    empty.textContent = "No open options tracked yet.";
+    els.optionsList.append(empty);
+    return;
+  }
+  for (const option of portfolio.options) {
+    const account = portfolio.accounts.find((item) => item.id === option.accountId);
+    const row = document.createElement("div");
+    row.className = "portfolio-list-row option-row";
+    row.innerHTML = `
+      <strong>${option.symbol}</strong>
+      <span>${option.type.replace("-", " ")}</span>
+      <span>${option.contracts} ct</span>
+      <span>${fmt.price(option.strike)}</span>
+      <small>${option.expiry || "No expiry"} · ${account?.name || "Unassigned"}${option.logId ? " · logged" : ""}</small>
+      <button class="icon remove-option" type="button" title="Remove option"></button>
+    `;
+    row.querySelector(".remove-option").addEventListener("click", () => {
+      portfolio.options = portfolio.options.filter((item) => item.id !== option.id);
+      if (option.logId) state.actionLog = state.actionLog.filter((item) => item.id !== option.logId);
+      persist();
+      renderPortfolioWorkspace();
+      renderRows();
+    });
+    els.optionsList.append(row);
+  }
+}
+
+function seedDemoPortfolio() {
+  const portfolio = activePortfolio();
+  portfolio.holdings = structuredClone(defaultWorkspace.portfolios[0].holdings).map((holding) => ({ ...holding, id: crypto.randomUUID() }));
+  portfolio.options = structuredClone(defaultWorkspace.portfolios[0].options).map((option) => ({ ...option, id: crypto.randomUUID() }));
+  persist();
+  renderPortfolioWorkspace();
+  renderRows();
+}
+
 async function refreshQuotes() {
   const symbols = mergedRows().map((row) => row.quoteSymbol || row.symbol).filter(Boolean);
   if (!symbols.length) return;
@@ -691,20 +1084,20 @@ function marketState(note) {
 
 function renderMarketNotes(notes) {
   const labels = ["S&P 500", "Nasdaq 100"];
-  const table = document.createElement("table");
-  table.className = "market-table";
+  const list = document.createElement("div");
+  list.className = "market-list";
   for (const [index, note] of notes.entries()) {
     const stateInfo = marketState(note);
     const label = labels[index] || "Market";
     const value = String(note.note || "").match(/(\d+(?:\.\d+)?)\s*%/)?.[1];
     const signedValue = value ? `${stateInfo.className === "over" ? "+" : stateInfo.className === "under" ? "-" : ""}${value}%` : "--";
-    const row = document.createElement("tr");
-    row.className = stateInfo.className;
+    const row = document.createElement("div");
+    row.className = `market-row ${stateInfo.className}`;
     row.title = `${label} is ${note.note || stateInfo.label} as of ${note.date || "the sheet date"}.`;
-    row.innerHTML = `<td><span>${stateInfo.icon}</span><b>${label}</b></td><td class="market-value">${signedValue}</td><td class="market-date">${note.date}</td>`;
-    table.append(row);
+    row.innerHTML = `<span class="market-icon">${stateInfo.icon}</span><b>${label}</b><strong>${signedValue}</strong>`;
+    list.append(row);
   }
-  els.marketNotes.replaceChildren(table);
+  els.marketNotes.replaceChildren(list);
 }
 
 function applyGlobalOverrides(assumptions) {
@@ -728,6 +1121,7 @@ async function loadScorecard(force = false) {
   applyGlobalOverrides(payload.assumptions);
   renderMarketNotes(payload.assumptions?.marketNotes || []);
   await refreshQuotes();
+  renderPortfolioWorkspace();
   renderRows();
   els.refreshBtn.disabled = false;
   els.refreshBtn.textContent = "Refresh";
@@ -807,7 +1201,7 @@ function saveLog() {
   const context = state.activeLogContext;
   if (!context) return;
   const selectedAction = actionsForRow(context.row).find((item) => item.type === els.logActionType.value) || context.action;
-  state.actionLog.unshift({
+  const logEntry = {
     id: crypto.randomUUID(),
     symbol: context.row.symbol,
     label: selectedAction.label,
@@ -824,11 +1218,36 @@ function saveLog() {
     strikeVsStock: els.logStrikeVsStock.value,
     notes: els.logNotes.value,
     createdAt: new Date().toISOString(),
-  });
+  };
+  state.actionLog.unshift(logEntry);
+  syncLoggedOptionToPortfolio(logEntry);
   persist();
   renderActionLog();
+  renderPortfolioWorkspace();
   renderRows();
   els.logDialog.close();
+}
+
+function syncLoggedOptionToPortfolio(logEntry) {
+  if (!["puts", "calls"].includes(logEntry.actionType)) return;
+  const portfolio = primaryPortfolio();
+  if (!portfolio) return;
+  const existing = portfolio.options.find((option) => option.logId === logEntry.id);
+  const accountId = portfolio.accounts[0]?.id || "";
+  const optionPayload = {
+    logId: logEntry.id,
+    symbol: logEntry.symbol,
+    type: logEntry.actionType,
+    contracts: 1,
+    strike: Number(logEntry.strike) || Number(logEntry.stockPrice) || quotePrice(logEntry.symbol),
+    expiry: logEntry.expiry || "",
+    accountId,
+  };
+  if (existing) {
+    Object.assign(existing, optionPayload);
+  } else {
+    portfolio.options.unshift({ id: crypto.randomUUID(), ...optionPayload });
+  }
 }
 
 function setFilter(filter) {
@@ -848,6 +1267,19 @@ document.querySelectorAll(".sort-header").forEach((button) => {
     state.sort = button.dataset.sort;
     renderRows();
   });
+});
+
+function setView(view) {
+  state.activeView = view;
+  els.pageTabs.forEach((button) => button.classList.toggle("active", button.dataset.view === view));
+  els.candidatesView.classList.toggle("active", view === "candidates");
+  els.portfolioViewPage.classList.toggle("active", view === "portfolio");
+  persist();
+  if (view === "portfolio") renderPortfolioWorkspace();
+}
+
+els.pageTabs.forEach((button) => {
+  button.addEventListener("click", () => setView(button.dataset.view));
 });
 
 els.actionableCard.addEventListener("click", () => setFilter("actionable"));
@@ -890,6 +1322,75 @@ els.searchAddBtn.addEventListener("click", async () => {
   renderRows();
 });
 
+els.workspaceAccountForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const portfolio = activePortfolio();
+  const broker = els.workspaceAccountBroker.value || "other";
+  portfolio.accounts.push({
+    id: crypto.randomUUID(),
+    broker,
+    name: els.workspaceAccountName.value || brokerById(broker).name,
+    value: Number(els.workspaceAccountValue.value) || 0,
+  });
+  els.workspaceAccountForm.reset();
+  renderBrokerOptions(els.workspaceAccountBroker);
+  persist();
+  renderPortfolioWorkspace();
+  renderRows();
+});
+
+els.seedDemoPortfolioBtn.addEventListener("click", seedDemoPortfolio);
+
+els.clearPortfolioDemoBtn.addEventListener("click", () => {
+  const portfolio = activePortfolio();
+  portfolio.holdings = [];
+  portfolio.options = [];
+  persist();
+  renderPortfolioWorkspace();
+  renderRows();
+});
+
+els.holdingForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const portfolio = activePortfolio();
+  const symbol = cleanTicker(els.holdingSymbol.value);
+  if (!/^[A-Z][A-Z0-9.]{0,7}$/.test(symbol)) return;
+  portfolio.holdings.push({
+    id: crypto.randomUUID(),
+    symbol,
+    type: els.holdingType.value,
+    shares: Number(els.holdingShares.value) || 0,
+    avgCost: Number(els.holdingCost.value) || 0,
+    accountId: els.holdingAccount.value,
+  });
+  els.holdingForm.reset();
+  persist();
+  await refreshQuotes();
+  renderPortfolioWorkspace();
+  renderRows();
+});
+
+els.optionForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const portfolio = activePortfolio();
+  const symbol = cleanTicker(els.optionSymbol.value);
+  if (!/^[A-Z][A-Z0-9.]{0,7}$/.test(symbol)) return;
+  portfolio.options.push({
+    id: crypto.randomUUID(),
+    symbol,
+    type: els.optionType.value,
+    contracts: Number(els.optionContracts.value) || 0,
+    strike: Number(els.optionStrike.value) || 0,
+    expiry: els.optionExpiry.value,
+    accountId: els.optionAccount.value,
+  });
+  els.optionForm.reset();
+  persist();
+  await refreshQuotes();
+  renderPortfolioWorkspace();
+  renderRows();
+});
+
 els.starredOnly.addEventListener("change", (event) => {
   state.starredOnly = event.target.checked;
   renderRows();
@@ -904,7 +1405,7 @@ els.addTickerForm.addEventListener("submit", async (event) => {
 });
 
 els.portfolioEditBtn.addEventListener("click", () => {
-  state.portfolioDraft = structuredClone(normalizePortfolio(state.portfolio));
+  state.portfolioDraft = { discount: Number(state.portfolio?.discount ?? defaultPortfolio.discount) || 0 };
   renderPortfolioEditor();
   els.portfolioDialog.showModal();
 });
@@ -914,7 +1415,7 @@ els.portfolioCancelBtn.addEventListener("click", () => {
 });
 
 els.portfolioSaveBtn.addEventListener("click", () => {
-  state.portfolio = normalizePortfolio(state.portfolioDraft);
+  state.portfolio = normalizePortfolio({ ...state.portfolio, discount: Number(state.portfolioDraft?.discount) || 0, accounts: liquidityPortfolio().accounts });
   state.portfolioDraft = null;
   persist();
   renderPortfolio();
@@ -923,19 +1424,24 @@ els.portfolioSaveBtn.addEventListener("click", () => {
   els.portfolioDialog.close();
 });
 
-els.addAccountBtn.addEventListener("click", () => {
-  state.portfolioDraft.accounts.push({ id: crypto.randomUUID(), broker: "schwab", name: "Brokerage account", value: 0 });
-  renderPortfolioEditor();
-});
-
 els.discountInput.addEventListener("input", () => {
   if (state.portfolioDraft) state.portfolioDraft.discount = Number(els.discountInput.value) || 0;
 });
 
+els.openPortfolioTabBtn.addEventListener("click", () => {
+  state.portfolioDraft = null;
+  els.portfolioDialog.close();
+  setView("portfolio");
+});
+
 els.clearLogBtn.addEventListener("click", () => {
   state.actionLog = [];
+  state.workspace.portfolios.forEach((portfolio) => {
+    portfolio.options = portfolio.options.filter((option) => !option.logId);
+  });
   persist();
   renderActionLog();
+  renderPortfolioWorkspace();
   renderRows();
 });
 
@@ -977,8 +1483,19 @@ function showError(error) {
   els.refreshBtn.textContent = "Refresh";
 }
 
-renderPortfolio();
-renderActionLog();
-applyLayoutState();
-loadScorecard().catch(showError);
+async function boot() {
+  renderPortfolio();
+  renderActionLog();
+  applyLayoutState();
+  renderPortfolioWorkspace();
+  setView(state.activeView);
+  await loadRemoteWorkspace();
+  applyLayoutState();
+  renderActionLog();
+  renderPortfolioWorkspace();
+  setView(state.activeView);
+  await loadScorecard();
+}
+
+boot().catch(showError);
 setInterval(() => autoRefreshMarketData().catch(showError), 15 * 60 * 1000);

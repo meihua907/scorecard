@@ -1,16 +1,23 @@
 const http = require("http");
 const fs = require("fs");
+const fsp = fs.promises;
 const path = require("path");
 
 const PORT = process.env.PORT || 4173;
 const DEFAULT_SHEET_ID = "1T7EkKbpCWymh5kb2O_lJuuJWQUWrLuiSQaKM1J8mugs";
 const DEFAULT_SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${DEFAULT_SHEET_ID}/export?format=csv&gid=0`;
 const PUBLIC_DIR = path.join(__dirname, "public");
+const LOCAL_DATA_DIR = path.join(__dirname, ".local-data");
+const LOCAL_WORKSPACE_FILE = path.join(LOCAL_DATA_DIR, "workspace.json");
+const DEMO_USER_ID = "demo";
 
 let cache = {
   sheet: null,
   quotes: new Map(),
 };
+
+let pgPool = null;
+let pgReady = false;
 
 function sendJson(res, status, payload) {
   res.writeHead(status, {
@@ -23,6 +30,112 @@ function sendJson(res, status, payload) {
 function sendText(res, status, text) {
   res.writeHead(status, { "content-type": "text/plain; charset=utf-8" });
   res.end(text);
+}
+
+async function readJsonBody(req, maxBytes = 1_000_000) {
+  let body = "";
+  for await (const chunk of req) {
+    body += chunk;
+    if (body.length > maxBytes) throw new Error("Request body is too large");
+  }
+  return body ? JSON.parse(body) : {};
+}
+
+function cleanWorkspacePayload(input) {
+  const payload = input && typeof input === "object" ? input : {};
+  return {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    settings: payload.settings && typeof payload.settings === "object" ? payload.settings : {},
+    workspace: payload.workspace && typeof payload.workspace === "object" ? payload.workspace : null,
+    portfolioLiquidity: payload.portfolioLiquidity && typeof payload.portfolioLiquidity === "object" ? payload.portfolioLiquidity : null,
+    actionLog: Array.isArray(payload.actionLog) ? payload.actionLog : [],
+    userPrefs: payload.userPrefs && typeof payload.userPrefs === "object" ? payload.userPrefs : {},
+  };
+}
+
+function loadPg() {
+  if (!process.env.DATABASE_URL) return null;
+  if (pgPool) return pgPool;
+  try {
+    const { Pool } = require("pg");
+    pgPool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
+    });
+    return pgPool;
+  } catch (error) {
+    console.warn(`Postgres unavailable, using local JSON persistence: ${error.message}`);
+    return null;
+  }
+}
+
+async function ensurePgSchema(pool) {
+  if (pgReady || !pool) return;
+  await pool.query(`
+    create table if not exists app_state (
+      user_id text primary key,
+      payload jsonb not null,
+      updated_at timestamptz not null default now()
+    )
+  `);
+  pgReady = true;
+}
+
+async function readStoredWorkspace(userId = DEMO_USER_ID) {
+  const pool = loadPg();
+  if (pool) {
+    await ensurePgSchema(pool);
+    const result = await pool.query("select payload, updated_at from app_state where user_id = $1", [userId]);
+    if (!result.rows.length) return { hasData: false, source: "postgres", userId };
+    return {
+      hasData: true,
+      source: "postgres",
+      userId,
+      updatedAt: result.rows[0].updated_at,
+      payload: result.rows[0].payload,
+    };
+  }
+
+  try {
+    const raw = await fsp.readFile(LOCAL_WORKSPACE_FILE, "utf8");
+    const payload = JSON.parse(raw);
+    return { hasData: true, source: "local-json", userId, updatedAt: payload.savedAt, payload };
+  } catch (error) {
+    if (error.code === "ENOENT") return { hasData: false, source: "local-json", userId };
+    throw error;
+  }
+}
+
+async function saveStoredWorkspace(payload, userId = DEMO_USER_ID) {
+  const cleaned = cleanWorkspacePayload(payload);
+  const pool = loadPg();
+  if (pool) {
+    await ensurePgSchema(pool);
+    await pool.query(
+      `insert into app_state (user_id, payload, updated_at)
+       values ($1, $2, now())
+       on conflict (user_id)
+       do update set payload = excluded.payload, updated_at = now()`,
+      [userId, cleaned],
+    );
+    return { source: "postgres", userId, payload: cleaned };
+  }
+
+  await fsp.mkdir(LOCAL_DATA_DIR, { recursive: true });
+  await fsp.writeFile(LOCAL_WORKSPACE_FILE, JSON.stringify(cleaned, null, 2));
+  return { source: "local-json", userId, payload: cleaned };
+}
+
+async function clearStoredWorkspace() {
+  const pool = loadPg();
+  if (pool) {
+    await ensurePgSchema(pool);
+    await pool.query("delete from app_state where user_id = $1", [DEMO_USER_ID]);
+    return { source: "postgres" };
+  }
+  await fsp.rm(LOCAL_WORKSPACE_FILE, { force: true });
+  return { source: "local-json" };
 }
 
 function parseCsv(text) {
@@ -271,6 +384,30 @@ function serveStatic(req, res) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
+    if (url.pathname === "/api/me") {
+      return sendJson(res, 200, {
+        user: { id: DEMO_USER_ID, name: "Demo User" },
+        auth: { provider: "demo", signedIn: false },
+        mode: "demo",
+        note: "Authentication is not enabled yet. Public deployments share this demo workspace.",
+      });
+    }
+    if (url.pathname === "/api/workspace" && req.method === "GET") {
+      return sendJson(res, 200, await readStoredWorkspace());
+    }
+    if (url.pathname === "/api/workspace" && (req.method === "PUT" || req.method === "POST")) {
+      const saved = await saveStoredWorkspace(await readJsonBody(req));
+      return sendJson(res, 200, {
+        ok: true,
+        source: saved.source,
+        userId: saved.userId,
+        updatedAt: saved.payload.savedAt,
+      });
+    }
+    if (url.pathname === "/api/workspace/reset-demo" && req.method === "POST") {
+      const result = await clearStoredWorkspace();
+      return sendJson(res, 200, { ok: true, source: result.source });
+    }
     if (url.pathname === "/api/scorecard") {
       const data = await getSheet(url.searchParams.get("force") === "1", url.searchParams.get("sheet") || "");
       return sendJson(res, 200, data);
