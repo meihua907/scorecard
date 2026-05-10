@@ -2,3 +2,5 @@
 node_modules/
 .local-data/
 prototype-*.png
+
+.vercel
