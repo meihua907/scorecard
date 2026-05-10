@@ -17,6 +17,20 @@
           <p>Main Scorecard</p>
         </header>
 
+        <section id="accountPanel" class="panel account-panel">
+          <div class="panel-heading">
+            <h2>Account</h2>
+            <span id="accountMode" class="mode-pill">Demo</span>
+          </div>
+          <div id="accountIdentity" class="account-identity"></div>
+          <div class="account-actions">
+            <a id="loginLink" class="account-button" href="/auth/google">Sign in with Google</a>
+            <a id="logoutLink" class="account-button secondary" href="/auth/logout" hidden>Sign out</a>
+            <button id="deleteAccountBtn" class="account-button danger" type="button" hidden>Delete my account</button>
+          </div>
+          <p id="accountNote" class="panel-note"></p>
+        </section>
+
         <section class="panel">
           <h2>Global Inputs</h2>
           <div class="metric-row">
@@ -89,6 +103,7 @@
         <nav class="page-tabs" aria-label="Main views">
           <button class="active" data-view="candidates" type="button">Investment Candidates</button>
           <button data-view="portfolio" type="button">My Portfolio</button>
+          <button data-view="admin" type="button">Admin</button>
         </nav>
 
         <section id="candidatesView" class="app-view active">
@@ -135,8 +150,8 @@
                   <th><button class="sort-header" data-sort="percentOfIv" type="button">% of IV</button></th>
                   <th>Price</th>
                   <th>Intrinsic</th>
-                  <th>EPS</th>
-                  <th>Ratings</th>
+                  <th class="eps-column">EPS</th>
+                  <th class="ratings-column">Ratings</th>
                   <th>Potential Actions</th>
                   <th></th>
                 </tr>
@@ -195,6 +210,7 @@
             <article>
               <span>Open option exposure</span>
               <strong id="portfolioOptionExposure">--</strong>
+              <small id="portfolioOptionExposureDetail"></small>
             </article>
           </section>
 
@@ -242,6 +258,64 @@
             </article>
           </section>
         </section>
+
+        <section id="adminViewPage" class="app-view admin-page">
+          <section class="portfolio-toolbar">
+            <div>
+              <p class="eyebrow">Admin Workspace</p>
+              <h2>App Settings</h2>
+              <p class="section-note">Control data sources, ticker display rules, Brandon-style assumptions, and table behavior.</p>
+            </div>
+          </section>
+
+          <section class="admin-layout">
+            <article class="portfolio-card">
+              <div class="panel-heading">
+                <h2>Data Sources</h2>
+              </div>
+              <form id="adminSettingsForm" class="admin-form">
+                <label class="full-field"><span>Google Sheet URL</span><input id="adminSheetUrlInput" type="url"></label>
+                <div class="admin-grid">
+                  <label><span>AAA yield override</span><input id="adminAaaOverrideInput" type="number" min="0" step="0.1"></label>
+                  <label><span>Bond yield override</span><input id="adminBondOverrideInput" type="number" min="0" step="0.1"></label>
+                  <label><span>Symbol link destination</span><select id="adminLinkProviderInput">
+                    <option value="stockanalysis">StockAnalysis</option>
+                    <option value="tradingview">TradingView</option>
+                    <option value="barchart">Barchart</option>
+                  </select></label>
+                </div>
+                <button type="submit">Save data settings</button>
+              </form>
+            </article>
+
+            <article class="portfolio-card">
+              <div class="panel-heading">
+                <h2>Ticker Display</h2>
+              </div>
+              <form id="tickerDisplayForm" class="admin-form ticker-display-form">
+                <input id="tickerDisplaySymbol" type="text" placeholder="Ticker, e.g. IREN" maxlength="12">
+                <select id="tickerDisplayBg">
+                  <option value="black">Black icon background</option>
+                  <option value="white">White icon background</option>
+                </select>
+                <button type="submit">Save ticker rule</button>
+              </form>
+              <div id="tickerDisplayList" class="admin-list"></div>
+            </article>
+
+            <article class="portfolio-card">
+              <div class="panel-heading">
+                <h2>Brandon Logic</h2>
+              </div>
+              <div class="logic-list">
+                <div><strong>Core goal</strong><span>Build VOO/QQQ or QQQM as the core, then add strong single tickers when price and quality line up.</span></div>
+                <div><strong>Put sizing</strong><span>Estimate cash-secured exposure from 7-day liquidity, target roughly 10% below current price, and round strikes to common option intervals.</span></div>
+                <div><strong>Calls</strong><span>Show budget now; option-chain premium estimates can become a later data integration.</span></div>
+                <div><strong>Future rules</strong><span>Intrinsic value, assignment value, sample portfolio templates, and bull/bear scale should become configurable modules here.</span></div>
+              </div>
+            </article>
+          </section>
+        </section>
       </main>
     </div>
 
@@ -262,7 +336,7 @@
         <td class="price"></td>
         <td class="intrinsic"></td>
         <td class="eps"></td>
-        <td><div class="harvey-set"></div></td>
+        <td class="ratings-cell"><div class="harvey-set"></div></td>
         <td><div class="potential-actions"></div></td>
         <td><button class="icon remove-btn" type="button" title="Remove ticker"></button></td>
       </tr>

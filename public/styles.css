@@ -25,6 +25,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -157,6 +161,73 @@ h2 {
   line-height: 1.35;
 }
 
+.account-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.mode-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.mode-pill.personal {
+  background: rgba(17, 132, 91, 0.22);
+  color: #bdf3db;
+}
+
+.account-identity {
+  display: grid;
+  gap: 2px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 0.86rem;
+}
+
+.account-identity strong {
+  color: #fff;
+}
+
+.account-identity small {
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.account-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 680;
+  text-decoration: none;
+}
+
+.account-button.secondary {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.account-button.danger {
+  background: rgba(189, 61, 56, 0.22);
+  border-color: rgba(189, 61, 56, 0.38);
+}
+
 .metric-row {
   display: flex;
   align-items: center;
@@ -170,10 +241,18 @@ h2 {
 .metric-row strong {
   color: #fff;
   font-weight: 680;
+  max-width: 150px;
+  overflow-wrap: anywhere;
+  text-align: right;
+  font-size: 0.95rem;
 }
 
 .total-row {
   margin-top: 10px;
+}
+
+.total-row strong {
+  font-size: 1rem;
 }
 
 .notes {
@@ -193,7 +272,7 @@ h2 {
 
 .market-row {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-columns: 22px minmax(0, 1fr) max-content;
   align-items: center;
   gap: 7px;
   padding: 8px 0;
@@ -211,6 +290,7 @@ h2 {
 
 .market-row strong {
   font-weight: 760;
+  white-space: nowrap;
 }
 
 .market-icon {
@@ -724,12 +804,113 @@ td small {
 .ticker-logo.white-logo {
   background: #fff;
   color: var(--ink);
+  border: 1px solid rgba(17, 33, 27, 0.12);
 }
 
 .ticker-logo-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.ticker-logo.mini-logo {
+  width: 26px;
+  height: 26px;
+  flex-basis: 26px;
+  font-size: 0.58rem;
+}
+
+.portfolio-symbol {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.portfolio-symbol strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eps-column,
+td.eps,
+.ratings-column,
+td.ratings-cell {
+  display: none;
+}
+
+.has-rich-popover {
+  cursor: help;
+}
+
+.rich-popover {
+  position: fixed;
+  z-index: 2000;
+  width: min(360px, calc(100vw - 24px));
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 18px 45px rgba(17, 33, 27, 0.22);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.rich-popover[hidden] {
+  display: none;
+}
+
+.rich-popover-body {
+  display: grid;
+  gap: 10px;
+}
+
+.rich-popover p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.popover-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 14px;
+  padding: 9px;
+  border-radius: 7px;
+  background: #f7faf7;
+}
+
+.popover-grid span,
+.rating-line span {
+  color: var(--muted);
+}
+
+.rating-popover {
+  display: grid;
+  gap: 7px;
+}
+
+.rating-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--line);
+}
+
+.rating-line small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
+.copy-popover {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 9px;
+  background: #fff;
+  color: var(--accent);
+  font-weight: 650;
 }
 
 .symbol {
@@ -1142,7 +1323,30 @@ td small {
 }
 
 .portfolio-list-row.account-list-row {
-  grid-template-columns: 34px minmax(120px, 1fr) 1fr 0.8fr auto 34px;
+  grid-template-columns: 34px minmax(120px, 1fr) 0.9fr 0.75fr minmax(210px, auto) auto 34px;
+}
+
+.account-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.flag-button {
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.flag-button.active {
+  border-color: #bfe0d3;
+  background: var(--buy-soft);
+  color: var(--buy);
 }
 
 .account-inline-editor {
@@ -1179,6 +1383,95 @@ td small {
   border-radius: 8px;
   color: var(--muted);
   text-align: center;
+}
+
+.admin-page {
+  align-content: start;
+}
+
+.admin-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.admin-layout .portfolio-card:last-child {
+  grid-column: 1 / -1;
+}
+
+.admin-form {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-form label,
+.admin-form .full-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.admin-form input,
+.admin-form select {
+  min-height: 42px;
+}
+
+.admin-form button {
+  justify-self: start;
+  border: 0;
+  border-radius: 7px;
+  padding: 10px 14px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 650;
+}
+
+.admin-grid,
+.ticker-display-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ticker-display-form {
+  grid-template-columns: minmax(100px, 0.8fr) minmax(160px, 1fr) auto;
+  align-items: end;
+}
+
+.admin-list,
+.logic-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.admin-list-row,
+.logic-list div {
+  display: grid;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.admin-list-row {
+  grid-template-columns: 26px minmax(80px, 0.8fr) minmax(80px, 1fr) auto;
+}
+
+.admin-list-row small,
+.logic-list span {
+  color: var(--muted);
+}
+
+.admin-list-row .remove-rule {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 9px;
+  background: #fff;
+  color: var(--muted);
 }
 
 .compact-rows th,
@@ -1240,7 +1533,17 @@ td small {
   }
 
   .portfolio-summary-grid,
+  .admin-layout,
   .portfolio-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-layout .portfolio-card:last-child {
+    grid-column: auto;
+  }
+
+  .admin-grid,
+  .ticker-display-form {
     grid-template-columns: 1fr;
   }
 

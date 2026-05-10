@@ -65,9 +65,9 @@ Portfolio liquidity, the My Portfolio workspace, starred tickers, added tickers,
 
 When running locally with no database, the server writes the shared demo workspace to `.local-data/workspace.json`. That folder is ignored by Git.
 
-On Render, add a PostgreSQL database and set `DATABASE_URL` on the web service. The app will automatically use a simple `app_state` table to persist the shared demo workspace across deploys and restarts. The table is created automatically, and the SQL is also in `db/schema.sql`.
+On Render, add a PostgreSQL database and set `DATABASE_URL` on the web service. The app will automatically use a simple `app_state` table to persist the shared demo workspace across deploys and restarts. After Google sign-in is configured, the same table stores one workspace per signed-in Google user. The table is created automatically, and the SQL is also in `db/schema.sql`.
 
-Important: this is still demo-mode persistence. Until login is added, everyone who visits the deployed app shares the same demo workspace. Do not put real private account data into the public Render deployment yet.
+Important: if Google sign-in is not configured, everyone who visits the deployed app shares the same demo workspace. Do not put real private account data into the public Render deployment until OAuth is enabled and you are signed in.
 
 For a real multi-user version, the next architecture step is adding login plus normalized database tables. A good Render-friendly path is:
 
@@ -92,6 +92,28 @@ git push origin main
 ```
 
 Render will rebuild with `npm install`, install `pg`, and start with `npm start`.
+
+## Google Sign-In Setup
+
+The app stays in demo mode unless these environment variables are set on Render:
+
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `APP_BASE_URL`, for example `https://your-render-service.onrender.com`
+
+In Google Cloud Console, create an OAuth Client ID for a web application and add this Authorized redirect URI:
+
+```text
+https://your-render-service.onrender.com/auth/google/callback
+```
+
+For local testing, use:
+
+```text
+http://localhost:4173/auth/google/callback
+```
+
+Sessions are currently held in server memory, so a Render restart signs users out, but their saved workspace remains in PostgreSQL. The next hardening step is moving sessions into PostgreSQL too.
 
 ## Vercel Notes
 

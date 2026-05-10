@@ -67,6 +67,7 @@ const state = {
     aaaYield: "",
     bondYield: "",
     linkProvider: "stockanalysis",
+    logoBackgrounds: {},
   },
   actionLog: JSON.parse(localStorage.getItem("actionLog") || "[]"),
   activeLogContext: null,
@@ -79,6 +80,7 @@ const state = {
   activeView: localStorage.getItem("activeView") || "candidates",
   lastSync: null,
   remotePersistenceReady: false,
+  account: null,
 };
 
 let remoteSaveTimer = null;
@@ -90,6 +92,12 @@ if (!localStorage.getItem("portfolioWorkspace") && localStorage.getItem("portfol
 const els = {
   appShell: document.querySelector(".app-shell"),
   sidebarToggle: document.querySelector("#sidebarToggle"),
+  accountMode: document.querySelector("#accountMode"),
+  accountIdentity: document.querySelector("#accountIdentity"),
+  accountNote: document.querySelector("#accountNote"),
+  loginLink: document.querySelector("#loginLink"),
+  logoutLink: document.querySelector("#logoutLink"),
+  deleteAccountBtn: document.querySelector("#deleteAccountBtn"),
   aaaYield: document.querySelector("#aaaYield"),
   bondYield: document.querySelector("#bondYield"),
   marketNotes: document.querySelector("#marketNotes"),
@@ -106,10 +114,12 @@ const els = {
   pageTabs: document.querySelectorAll(".page-tabs button"),
   candidatesView: document.querySelector("#candidatesView"),
   portfolioViewPage: document.querySelector("#portfolioViewPage"),
+  adminViewPage: document.querySelector("#adminViewPage"),
   portfolioPageTotal: document.querySelector("#portfolioPageTotal"),
   portfolioIndexAllocation: document.querySelector("#portfolioIndexAllocation"),
   portfolioSingleAllocation: document.querySelector("#portfolioSingleAllocation"),
   portfolioOptionExposure: document.querySelector("#portfolioOptionExposure"),
+  portfolioOptionExposureDetail: document.querySelector("#portfolioOptionExposureDetail"),
   holdingsList: document.querySelector("#holdingsList"),
   optionsList: document.querySelector("#optionsList"),
   workspaceAccountsList: document.querySelector("#workspaceAccountsList"),
@@ -158,6 +168,15 @@ const els = {
   bondOverrideInput: document.querySelector("#bondOverrideInput"),
   linkProviderInput: document.querySelector("#linkProviderInput"),
   saveSettingsBtn: document.querySelector("#saveSettingsBtn"),
+  adminSettingsForm: document.querySelector("#adminSettingsForm"),
+  adminSheetUrlInput: document.querySelector("#adminSheetUrlInput"),
+  adminAaaOverrideInput: document.querySelector("#adminAaaOverrideInput"),
+  adminBondOverrideInput: document.querySelector("#adminBondOverrideInput"),
+  adminLinkProviderInput: document.querySelector("#adminLinkProviderInput"),
+  tickerDisplayForm: document.querySelector("#tickerDisplayForm"),
+  tickerDisplaySymbol: document.querySelector("#tickerDisplaySymbol"),
+  tickerDisplayBg: document.querySelector("#tickerDisplayBg"),
+  tickerDisplayList: document.querySelector("#tickerDisplayList"),
   logDialog: document.querySelector("#logDialog"),
   logTitle: document.querySelector("#logTitle"),
   logLogo: document.querySelector("#logLogo"),
@@ -194,6 +213,7 @@ state.settings = {
   aaaYield: "",
   bondYield: "",
   linkProvider: "stockanalysis",
+  logoBackgrounds: {},
   ...state.settings,
 };
 
@@ -315,6 +335,41 @@ async function saveRemoteWorkspace() {
   if (!response.ok) throw new Error(`Workspace save failed: ${response.status}`);
 }
 
+async function loadAccount() {
+  try {
+    const response = await fetch("/api/me");
+    if (!response.ok) throw new Error(`Account load failed: ${response.status}`);
+    state.account = await response.json();
+  } catch (error) {
+    state.account = {
+      user: { name: "Demo User" },
+      auth: { signedIn: false, configured: false },
+      mode: "demo",
+      note: "Account status is unavailable; using browser demo mode.",
+    };
+    console.warn("Account load failed", error);
+  }
+  renderAccount();
+}
+
+function renderAccount() {
+  const account = state.account || {};
+  const signedIn = Boolean(account.auth?.signedIn);
+  els.accountMode.textContent = signedIn ? "Personal" : "Demo";
+  els.accountMode.classList.toggle("personal", signedIn);
+  els.accountIdentity.innerHTML = signedIn
+    ? `<strong>${account.user?.name || "Signed in"}</strong><small>${account.user?.email || "Google account"}</small>`
+    : `<strong>Demo workspace</strong><small>Shared until you sign in.</small>`;
+  els.accountNote.textContent = signedIn
+    ? "Your workspace saves under your Google account."
+    : account.auth?.configured
+      ? "Sign in to keep your portfolio separate from the shared demo workspace."
+      : "Google sign-in is not configured yet. Add OAuth env vars on Render to enable personal workspaces.";
+  els.loginLink.hidden = signedIn || !account.auth?.configured;
+  els.logoutLink.hidden = !signedIn;
+  els.deleteAccountBtn.hidden = !signedIn;
+}
+
 function brokerById(id) {
   return brokers.find((broker) => broker.id === id) || brokers.at(-1);
 }
@@ -345,6 +400,8 @@ function normalizePortfolio(portfolio) {
         broker,
         name: account.name || brokerById(broker).name,
         value: Number(account.value) || 0,
+        liquidityIncluded: account.liquidityIncluded !== false,
+        strategyPrimary: Boolean(account.strategyPrimary),
       };
     }),
   };
@@ -369,6 +426,7 @@ function normalizeWorkspace(workspace) {
         shares: Number(holding.shares) || 0,
         avgCost: Number(holding.avgCost) || 0,
         accountId: holding.accountId || accounts[0]?.id || "",
+        allocationTracked: holding.allocationTracked !== false,
       })).filter((holding) => holding.symbol),
       options: (portfolio.options || []).map((option) => ({
         id: option.id || crypto.randomUUID(),
@@ -376,12 +434,19 @@ function normalizeWorkspace(workspace) {
         type: option.type || "puts",
         contracts: Number(option.contracts) || 0,
         strike: Number(option.strike) || 0,
+        intrinsicAtOpen: Number(option.intrinsicAtOpen) || null,
         expiry: option.expiry || "",
         accountId: option.accountId || accounts[0]?.id || "",
+        logId: option.logId || "",
       })).filter((option) => option.symbol),
     };
   });
   if (!normalized.some((portfolio) => portfolio.primary)) normalized[0].primary = true;
+  for (const portfolio of normalized) {
+    if (portfolio.accounts.length && !portfolio.accounts.some((account) => account.strategyPrimary)) {
+      portfolio.accounts[0].strategyPrimary = true;
+    }
+  }
   const activePortfolioId = normalized.some((portfolio) => portfolio.id === source.activePortfolioId)
     ? source.activePortfolioId
     : normalized.find((portfolio) => portfolio.primary)?.id || normalized[0].id;
@@ -394,9 +459,10 @@ function brokerLogoUrl(broker) {
 
 function liquidityPortfolio() {
   const primary = primaryPortfolio();
+  const liquidityAccounts = primary?.accounts?.filter((account) => account.liquidityIncluded !== false);
   return {
     discount: Number(state.portfolio?.discount ?? defaultPortfolio.discount) || 0,
-    accounts: primary?.accounts?.length ? primary.accounts : normalizePortfolio(state.portfolio).accounts,
+    accounts: liquidityAccounts?.length ? liquidityAccounts : normalizePortfolio(state.portfolio).accounts,
   };
 }
 
@@ -418,6 +484,11 @@ function quotePrice(symbol, fallback = 0) {
   const quoteSymbol = cleanTicker(symbol).replace(".", "-");
   const quote = state.quotes[quoteSymbol];
   return Number(quote?.price) || Number(fallback) || 0;
+}
+
+function rowForSymbol(symbol) {
+  const clean = cleanTicker(symbol);
+  return mergedRows().find((row) => row.symbol === clean);
 }
 
 function holdingValue(holding) {
@@ -448,12 +519,23 @@ function portfolioStats(portfolio = activePortfolio()) {
   };
 }
 
+function optionExposureByTicker(portfolio = activePortfolio()) {
+  const entries = new Map();
+  for (const option of portfolio?.options || []) {
+    const current = entries.get(option.symbol) || 0;
+    entries.set(option.symbol, current + optionExposure(option));
+  }
+  return [...entries.entries()].sort((a, b) => b[1] - a[1]);
+}
+
 function exposureForSymbol(symbol, portfolio = primaryPortfolio()) {
   const clean = cleanTicker(symbol);
   const holdings = portfolio?.holdings || [];
   const options = portfolio?.options || [];
   return {
-    shares: holdings.some((holding) => holding.symbol === clean && Number(holding.shares) > 0),
+    shares: holdings
+      .filter((holding) => holding.symbol === clean)
+      .reduce((sum, holding) => sum + (Number(holding.shares) || 0), 0),
     puts: options.some((option) => option.symbol === clean && option.type === "puts"),
     calls: options.some((option) => option.symbol === clean && ["calls", "covered-calls"].includes(option.type)),
   };
@@ -481,9 +563,24 @@ function logoSymbol(symbol) {
   return symbol.slice(0, 2).replace(".", "");
 }
 
+function logoBackground(symbol) {
+  const clean = cleanTicker(symbol);
+  return state.settings.logoBackgrounds?.[clean] || (whiteLogoSymbols.has(clean) ? "white" : "black");
+}
+
+function applyTickerLogoStyle(wrapper, symbol) {
+  wrapper.classList.toggle("white-logo", logoBackground(symbol) === "white");
+}
+
 function companyLogo(symbol) {
   const yahooSymbol = symbol.toUpperCase().replace(".", "-");
   return `https://financialmodelingprep.com/image-stock/${encodeURIComponent(yahooSymbol)}.png`;
+}
+
+function tickerLogoHtml(symbol, className = "") {
+  const clean = cleanTicker(symbol);
+  const bgClass = logoBackground(clean) === "white" ? " white-logo" : "";
+  return `<span class="ticker-logo ${className}${bgClass}" data-fallback="${logoSymbol(clean)}"><img class="ticker-logo-img" alt="" src="${companyLogo(clean)}"></span>`;
 }
 
 function cleanTicker(value) {
@@ -668,7 +765,9 @@ function renderPortfolioEditor() {
 
 function renderActionLog() {
   const liquidity = portfolioTotals().liquidity;
-  const committed = state.actionLog.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const manualOptions = (primaryPortfolio()?.options || []).filter((option) => !option.logId);
+  const manualOptionExposure = manualOptions.reduce((sum, option) => sum + optionExposure(option), 0);
+  const committed = state.actionLog.reduce((sum, item) => sum + (Number(item.amount) || 0), 0) + manualOptionExposure;
   const ratio = liquidity ? (committed / liquidity) * 100 : 0;
   els.actionLog.replaceChildren();
 
@@ -677,12 +776,19 @@ function renderActionLog() {
   summary.innerHTML = `<span>Logged exposure</span><strong>${fmt.money(committed)}</strong><small>${fmt.percent(ratio)} of liquidity</small>`;
   els.actionLog.append(summary);
 
-  if (!state.actionLog.length) {
+  if (!state.actionLog.length && !manualOptions.length) {
     const empty = document.createElement("p");
     empty.className = "empty-log";
     empty.textContent = "No actions logged yet.";
     els.actionLog.append(empty);
     return;
+  }
+
+  for (const option of manualOptions.slice(0, 4)) {
+    const entry = document.createElement("div");
+    entry.className = "log-entry option-log-entry";
+    entry.innerHTML = `<strong>${option.symbol}</strong><span>${option.type.replace("-", " ")}</span><small>${fmt.money(optionExposure(option))} open option exposure</small>`;
+    els.actionLog.append(entry);
   }
 
   for (const item of state.actionLog.slice(0, 8)) {
@@ -704,6 +810,171 @@ function renderHarvey(container, row) {
     ball.title = `${meta.label}: ${value ?? "--"} / ${meta.max}. ${meta.note}`;
     container.append(ball);
   }
+}
+
+function richPopover(target, html, copyText = "") {
+  target.classList.add("has-rich-popover");
+  let popover;
+  let hideTimer;
+  const show = () => {
+    clearTimeout(hideTimer);
+    if (!popover) {
+      popover = document.createElement("div");
+      popover.className = "rich-popover";
+      popover.innerHTML = `<div class="rich-popover-body">${html}</div>${copyText ? '<button type="button" class="copy-popover">Copy</button>' : ""}`;
+      document.body.append(popover);
+      popover.addEventListener("mouseenter", () => clearTimeout(hideTimer));
+      popover.addEventListener("mouseleave", hide);
+      popover.querySelector(".copy-popover")?.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(copyText);
+          popover.querySelector(".copy-popover").textContent = "Copied";
+        } catch {
+          popover.querySelector(".copy-popover").textContent = "Copy failed";
+        }
+      });
+    }
+    const rect = target.getBoundingClientRect();
+    popover.style.left = `${Math.min(window.innerWidth - popover.offsetWidth - 12, Math.max(12, rect.left))}px`;
+    popover.style.top = `${Math.min(window.innerHeight - popover.offsetHeight - 12, rect.bottom + 8)}px`;
+    popover.hidden = false;
+  };
+  const hide = () => {
+    hideTimer = setTimeout(() => {
+      if (popover) popover.hidden = true;
+    }, 120);
+  };
+  target.addEventListener("mouseenter", show);
+  target.addEventListener("focus", show);
+  target.addEventListener("mouseleave", hide);
+  target.addEventListener("blur", hide);
+}
+
+function scorePopoverHtml(row) {
+  const ratings = ratingMeta.map((meta) => {
+    const value = row[meta.key];
+    return `<div class="rating-line"><span>${meta.label}</span><b>${value ?? "--"}/${meta.max}</b><small>${meta.note}</small></div>`;
+  }).join("");
+  return `
+    <strong>${row.symbol} score: ${row.score ?? "Needs scoring"}/100</strong>
+    <div class="popover-grid">
+      <span>EPS TTM</span><b>${fmt.number(row.epsTtm, 2)}</b>
+      <span>Intrinsic value</span><b>${fmt.price(row.intrinsicValue)}</b>
+      <span>% of IV</span><b>${fmt.percent(row.percentOfIv)}</b>
+    </div>
+    <div class="rating-popover">${ratings}</div>
+  `;
+}
+
+function scoreCopyText(row) {
+  const lines = [
+    ["Ticker", row.symbol],
+    ["Score", row.score ?? ""],
+    ["EPS TTM", fmt.number(row.epsTtm, 2)],
+    ["Intrinsic Value", fmt.price(row.intrinsicValue)],
+    ["% of IV", fmt.percent(row.percentOfIv)],
+    ...ratingMeta.map((meta) => [meta.label, `${row[meta.key] ?? ""}/${meta.max}`]),
+  ];
+  return lines.map((line) => line.join("\t")).join("\n");
+}
+
+function ownedShares(symbol) {
+  const clean = cleanTicker(symbol);
+  return (primaryPortfolio()?.holdings || [])
+    .filter((holding) => holding.symbol === clean)
+    .reduce((sum, holding) => sum + (Number(holding.shares) || 0), 0);
+}
+
+function roundOptionStrike(value) {
+  const price = Number(value) || 0;
+  if (price >= 200) return Math.round(price / 5) * 5;
+  if (price >= 50) return Math.round(price / 2.5) * 2.5;
+  if (price >= 20) return Math.round(price);
+  return Math.round(price * 2) / 2;
+}
+
+function enrichAction(action, row) {
+  const price = Number(row.currentPrice) || quotePrice(row.symbol) || 0;
+  const enriched = { ...action, currentPrice: price };
+  if (action.status !== "yes" || !action.amount || !price) return enriched;
+  if (action.type === "shares") {
+    const recommendedShares = Math.floor(action.amount / price);
+    const owned = ownedShares(row.symbol);
+    const remainingShares = Math.max(0, recommendedShares - owned);
+    return {
+      ...enriched,
+      recommendedShares,
+      ownedShares: owned,
+      remainingShares,
+      remainingAmount: remainingShares * price,
+    };
+  }
+  if (action.type === "puts") {
+    const targetBelow = Number.isFinite(action.below) ? action.below : 10;
+    const targetStrike = roundOptionStrike(price * (1 - targetBelow / 100));
+    const maxContracts = targetStrike ? Math.floor(action.amount / (targetStrike * 100)) : 0;
+    const beyondContracts = maxContracts + 1;
+    return {
+      ...enriched,
+      targetStrike,
+      maxContracts,
+      beyondContracts,
+      exposure: maxContracts * targetStrike * 100,
+      beyondExposure: beyondContracts * targetStrike * 100,
+    };
+  }
+  if (action.type === "calls") {
+    return { ...enriched, premiumBudget: action.amount };
+  }
+  return enriched;
+}
+
+function actionDetail(action) {
+  if (action.status === "radar") return "Radar";
+  if (action.status !== "yes") return "No";
+  if (action.type === "shares") {
+    if (action.remainingShares === 0 && action.recommendedShares) return "Covered";
+    return `${fmt.money(action.remainingAmount ?? action.amount)} / ${action.remainingShares ?? "--"} sh`;
+  }
+  if (action.type === "puts") {
+    return `${action.maxContracts || 0} ct @ ${fmt.price(action.targetStrike)}`;
+  }
+  if (action.type === "calls") {
+    return `${fmt.money(action.premiumBudget)} budget`;
+  }
+  return fmt.money(action.amount);
+}
+
+function actionPopoverHtml(action, row, logged) {
+  const loggedTotal = logged.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const lines = [
+    `<strong>${row.symbol}: ${action.label}</strong>`,
+    `<div class="popover-grid"><span>Status</span><b>${action.status.toUpperCase()}</b><span>Portfolio ratio</span><b>${Number.isFinite(action.percent) ? fmt.percent(action.percent) : "--"}</b><span>Budget</span><b>${fmt.money(action.amount)}</b></div>`,
+  ];
+  if (action.type === "shares" && action.status === "yes") {
+    lines.push(`<p>Estimated target: ${action.recommendedShares || 0} shares. You already track ${fmt.number(action.ownedShares || 0, 2)} shares, so the remaining action is about ${action.remainingShares || 0} shares (${fmt.money(action.remainingAmount || 0)}).</p>`);
+  }
+  if (action.type === "puts" && action.status === "yes") {
+    lines.push(`<p>Target strike: ${fmt.price(action.targetStrike)} near ${(action.below || 10)}% below current price. Max size: ${action.maxContracts || 0} contracts (${fmt.money(action.exposure || 0)} exposure). Beyond-ratio size: ${action.beyondContracts || 0} contracts (${fmt.money(action.beyondExposure || 0)}).</p>`);
+  }
+  if (action.type === "calls" && action.status === "yes") {
+    lines.push(`<p>Premium budget: ${fmt.money(action.premiumBudget)}. Contract count needs option-chain premium data before it can be estimated responsibly.</p>`);
+  }
+  if (logged.length) lines.push(`<small>Logged: ${logged.length} action(s), ${fmt.money(loggedTotal)}.</small>`);
+  return lines.join("");
+}
+
+function actionCopyText(action, row) {
+  const lines = [
+    ["Ticker", row.symbol],
+    ["Action", action.label],
+    ["Status", action.status],
+    ["Budget", fmt.money(action.amount)],
+  ];
+  if (action.type === "shares") lines.push(["Estimated shares", action.recommendedShares || 0], ["Owned shares", action.ownedShares || 0], ["Remaining shares", action.remainingShares || 0]);
+  if (action.type === "puts") lines.push(["Target strike", fmt.price(action.targetStrike)], ["Max contracts", action.maxContracts || 0], ["Max exposure", fmt.money(action.exposure || 0)], ["Beyond ratio contracts", action.beyondContracts || 0], ["Beyond exposure", fmt.money(action.beyondExposure || 0)]);
+  if (action.type === "calls") lines.push(["Premium budget", fmt.money(action.premiumBudget)]);
+  return lines.map((line) => line.join("\t")).join("\n");
 }
 
 function actionTooltip(action, row) {
@@ -730,7 +1001,7 @@ function actionsForRow(row) {
     parseAction(row.buyShares, "shares", liquidity),
     parseAction(row.sellPuts, "puts", liquidity),
     parseAction(row.buyCalls, "calls", liquidity),
-  ];
+  ].map((action) => enrichAction(action, row));
 }
 
 function renderPotentialActions(container, row) {
@@ -740,22 +1011,16 @@ function renderPotentialActions(container, row) {
 
   for (const action of actions) {
     const logged = logsFor(row, action);
-    const alreadyCovered = (action.type === "shares" && exposure.shares)
+    const alreadyCovered = (action.type === "shares" && action.status === "yes" && action.remainingShares === 0 && action.recommendedShares > 0)
       || (action.type === "puts" && exposure.puts)
       || (action.type === "calls" && exposure.calls);
     const chip = document.createElement("div");
     chip.className = `action-chip ${alreadyCovered ? "covered" : action.status} ${logged.length ? "logged" : ""}`;
-    chip.title = alreadyCovered
-      ? `${action.label}: hidden as a new action because the primary portfolio already has ${action.type === "shares" ? "shares" : `open ${action.label.toLowerCase()}`} exposure.`
-      : `${actionTooltip(action, row)}${logged.length ? `\nLogged: ${logged.length} action(s), ${fmt.money(logged.reduce((sum, item) => sum + Number(item.amount || 0), 0))}` : ""}`;
     const detail = alreadyCovered
       ? action.type === "shares" ? "Owned" : "Open"
-      : action.status === "yes" && action.amount
-      ? fmt.money(action.amount)
-      : action.status === "radar"
-        ? "Radar"
-        : "No";
+      : actionDetail(action);
     chip.innerHTML = `<span class="status-dot"></span><span>${action.label}</span><strong>${detail}</strong>`;
+    richPopover(chip, actionPopoverHtml(action, row, logged), actionCopyText(action, row));
     if (logged.length) {
       const badge = document.createElement("span");
       badge.className = "logged-badge";
@@ -826,7 +1091,7 @@ function renderRows() {
     fragment.querySelector(".updated").textContent = row.dateUpdated ? `Updated ${row.dateUpdated}${ago ? ` (${ago})` : ""}` : row.source;
 
     logo.dataset.fallback = logoSymbol(row.symbol);
-    logo.classList.toggle("white-logo", whiteLogoSymbols.has(row.symbol));
+    applyTickerLogoStyle(logo, row.symbol);
     logoImg.alt = row.quote?.name || row.symbol;
     logoImg.src = companyLogo(row.symbol);
     logoImg.addEventListener("error", () => {
@@ -836,7 +1101,8 @@ function renderRows() {
 
     score.textContent = row.score ?? "New";
     score.className = `score-pill ${scoreClass(row.score)}`;
-    score.title = row.score === null || row.score === undefined ? "Needs scoring" : `Overall score: ${row.score} / 100`;
+    score.title = "";
+    richPopover(score, scorePopoverHtml(row), scoreCopyText(row));
 
     iv.textContent = fmt.percent(row.percentOfIv);
     iv.className = `iv-percent ${row.percentOfIv <= 100 ? "cheap" : "rich"}`;
@@ -886,12 +1152,49 @@ function renderPortfolioWorkspace() {
   els.portfolioIndexAllocation.textContent = fmt.percent(stats.indexPct);
   els.portfolioSingleAllocation.textContent = fmt.percent(stats.singlePct);
   els.portfolioOptionExposure.textContent = fmt.money(stats.optionExposure);
+  const liquidity = portfolioTotals().liquidity;
+  const exposurePct = liquidity ? (stats.optionExposure / liquidity) * 100 : 0;
+  const topExposure = optionExposureByTicker(portfolio).slice(0, 3).map(([symbol, value]) => `${symbol} ${fmt.money(value)}`).join(" / ");
+  els.portfolioOptionExposureDetail.textContent = `${fmt.percent(exposurePct)} of liquidity${topExposure ? ` / ${topExposure}` : ""}`;
   renderWorkspaceAccounts(portfolio);
   renderPortfolioAccountOptions(portfolio);
   renderHoldings(portfolio);
   renderOptions(portfolio);
   renderPortfolio();
   renderActionLog();
+}
+
+function renderAdminPage() {
+  if (!els.adminSettingsForm) return;
+  els.adminSheetUrlInput.value = state.settings.sheetUrl || defaultSheetUrl;
+  els.adminAaaOverrideInput.value = state.settings.aaaYield || "";
+  els.adminBondOverrideInput.value = state.settings.bondYield || "";
+  els.adminLinkProviderInput.value = state.settings.linkProvider || "stockanalysis";
+  els.tickerDisplayList.replaceChildren();
+  const symbols = [...new Set([...Object.keys(state.settings.logoBackgrounds || {}), ...whiteLogoSymbols])].sort();
+  for (const symbol of symbols) {
+    const item = document.createElement("div");
+    item.className = "admin-list-row";
+    const bg = logoBackground(symbol);
+    item.innerHTML = `
+      ${tickerLogoHtml(symbol, "mini-logo")}
+      <strong>${symbol}</strong>
+      <span>${bg === "white" ? "White background" : "Black background"}</span>
+      <button class="text-button remove-rule" type="button">Reset</button>
+    `;
+    item.querySelector(".ticker-logo-img")?.addEventListener("error", (event) => {
+      const wrapper = event.target.closest(".ticker-logo");
+      event.target.remove();
+      wrapper.textContent = wrapper.dataset.fallback;
+    }, { once: true });
+    item.querySelector(".remove-rule").addEventListener("click", () => {
+      delete state.settings.logoBackgrounds[symbol];
+      persist();
+      renderAdminPage();
+      renderRows();
+    });
+    els.tickerDisplayList.append(item);
+  }
 }
 
 function renderBrokerOptions(select, selected = "schwab") {
@@ -923,14 +1226,36 @@ function renderWorkspaceAccounts(portfolio) {
       <strong>${account.name || broker.name}</strong>
       <span>${broker.name}</span>
       <span>${fmt.money(Number(account.value) || 0)}</span>
+      <span class="account-flags">
+        <button class="flag-button liquidity-flag ${account.liquidityIncluded !== false ? "active" : ""}" type="button">${account.liquidityIncluded !== false ? "7-day liquidity" : "Excluded"}</button>
+        <button class="flag-button strategy-flag ${account.strategyPrimary ? "active" : ""}" type="button">${account.strategyPrimary ? "Primary strategy" : "Strategy account"}</button>
+      </span>
       <button class="secondary-button account-edit" type="button">Edit</button>
       <button class="icon remove-account" type="button" title="Remove account"></button>
     `;
+    row.querySelector(".liquidity-flag").addEventListener("click", () => {
+      account.liquidityIncluded = account.liquidityIncluded === false;
+      persist();
+      renderPortfolioWorkspace();
+      renderRows();
+    });
+    row.querySelector(".strategy-flag").addEventListener("click", () => {
+      portfolio.accounts.forEach((item) => {
+        item.strategyPrimary = item.id === account.id;
+      });
+      persist();
+      renderPortfolioWorkspace();
+      renderRows();
+    });
     row.querySelector(".account-edit").addEventListener("click", () => {
       row.replaceChildren(renderAccountInlineEditor(portfolio, account));
     });
     row.querySelector(".remove-account").addEventListener("click", () => {
+      if (account.strategyPrimary && !window.confirm(`${account.name || broker.name} is the primary strategy account. Delete it anyway?`)) return;
       portfolio.accounts = portfolio.accounts.filter((item) => item.id !== account.id);
+      if (portfolio.accounts.length && !portfolio.accounts.some((item) => item.strategyPrimary)) {
+        portfolio.accounts[0].strategyPrimary = true;
+      }
       const fallbackAccountId = portfolio.accounts[0]?.id || "";
       portfolio.holdings.forEach((holding) => {
         if (holding.accountId === account.id) holding.accountId = fallbackAccountId;
@@ -1002,13 +1327,18 @@ function renderHoldings(portfolio) {
     const row = document.createElement("div");
     row.className = "portfolio-list-row";
     row.innerHTML = `
-      <strong>${holding.symbol}</strong>
+      <span class="portfolio-symbol">${tickerLogoHtml(holding.symbol, "mini-logo")}<strong>${holding.symbol}</strong></span>
       <span>${holding.type.replace("-", " ")}</span>
       <span>${fmt.number(holding.shares, 2)} sh</span>
       <span>${fmt.money(holdingValue(holding))}</span>
       <small>${account?.name || "Unassigned"}</small>
       <button class="icon remove-holding" type="button" title="Remove holding"></button>
     `;
+    row.querySelector(".ticker-logo-img")?.addEventListener("error", (event) => {
+      const wrapper = event.target.closest(".ticker-logo");
+      event.target.remove();
+      wrapper.textContent = wrapper.dataset.fallback;
+    }, { once: true });
     row.querySelector(".remove-holding").addEventListener("click", () => {
       portfolio.holdings = portfolio.holdings.filter((item) => item.id !== holding.id);
       persist();
@@ -1030,16 +1360,23 @@ function renderOptions(portfolio) {
   }
   for (const option of portfolio.options) {
     const account = portfolio.accounts.find((item) => item.id === option.accountId);
+    const security = rowForSymbol(option.symbol);
+    const currentIv = security?.intrinsicValue;
     const row = document.createElement("div");
     row.className = "portfolio-list-row option-row";
     row.innerHTML = `
-      <strong>${option.symbol}</strong>
+      <span class="portfolio-symbol">${tickerLogoHtml(option.symbol, "mini-logo")}<strong>${option.symbol}</strong></span>
       <span>${option.type.replace("-", " ")}</span>
       <span>${option.contracts} ct</span>
       <span>${fmt.price(option.strike)}</span>
-      <small>${option.expiry || "No expiry"} · ${account?.name || "Unassigned"}${option.logId ? " · logged" : ""}</small>
+      <small>${option.expiry || "No expiry"} / ${account?.name || "Unassigned"}${option.logId ? " / logged" : ""}<br>IV open ${fmt.price(option.intrinsicAtOpen)} / IV now ${fmt.price(currentIv)}</small>
       <button class="icon remove-option" type="button" title="Remove option"></button>
     `;
+    row.querySelector(".ticker-logo-img")?.addEventListener("error", (event) => {
+      const wrapper = event.target.closest(".ticker-logo");
+      event.target.remove();
+      wrapper.textContent = wrapper.dataset.fallback;
+    }, { once: true });
     row.querySelector(".remove-option").addEventListener("click", () => {
       portfolio.options = portfolio.options.filter((item) => item.id !== option.id);
       if (option.logId) state.actionLog = state.actionLog.filter((item) => item.id !== option.logId);
@@ -1240,6 +1577,7 @@ function syncLoggedOptionToPortfolio(logEntry) {
     type: logEntry.actionType,
     contracts: 1,
     strike: Number(logEntry.strike) || Number(logEntry.stockPrice) || quotePrice(logEntry.symbol),
+    intrinsicAtOpen: rowForSymbol(logEntry.symbol)?.intrinsicValue || null,
     expiry: logEntry.expiry || "",
     accountId,
   };
@@ -1274,8 +1612,10 @@ function setView(view) {
   els.pageTabs.forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   els.candidatesView.classList.toggle("active", view === "candidates");
   els.portfolioViewPage.classList.toggle("active", view === "portfolio");
+  els.adminViewPage.classList.toggle("active", view === "admin");
   persist();
   if (view === "portfolio") renderPortfolioWorkspace();
+  if (view === "admin") renderAdminPage();
 }
 
 els.pageTabs.forEach((button) => {
@@ -1331,6 +1671,8 @@ els.workspaceAccountForm.addEventListener("submit", (event) => {
     broker,
     name: els.workspaceAccountName.value || brokerById(broker).name,
     value: Number(els.workspaceAccountValue.value) || 0,
+    liquidityIncluded: true,
+    strategyPrimary: portfolio.accounts.length === 0,
   });
   els.workspaceAccountForm.reset();
   renderBrokerOptions(els.workspaceAccountBroker);
@@ -1445,12 +1787,17 @@ els.clearLogBtn.addEventListener("click", () => {
   renderRows();
 });
 
+els.deleteAccountBtn.addEventListener("click", async () => {
+  const confirmed = window.confirm("Delete your saved portfolio workspace and sign out?");
+  if (!confirmed) return;
+  const response = await fetch("/api/account", { method: "DELETE" });
+  if (!response.ok) return showError(new Error("Could not delete account workspace."));
+  localStorage.clear();
+  window.location.href = "/";
+});
+
 els.settingsBtn.addEventListener("click", () => {
-  els.sheetUrlInput.value = state.settings.sheetUrl || defaultSheetUrl;
-  els.aaaOverrideInput.value = state.settings.aaaYield;
-  els.bondOverrideInput.value = state.settings.bondYield;
-  els.linkProviderInput.value = state.settings.linkProvider || "stockanalysis";
-  els.settingsDialog.showModal();
+  setView("admin");
 });
 
 els.saveSettingsBtn.addEventListener("click", () => {
@@ -1461,6 +1808,29 @@ els.saveSettingsBtn.addEventListener("click", () => {
   persist();
   els.settingsDialog.close();
   loadScorecard(true).catch(showError);
+});
+
+els.adminSettingsForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  state.settings.sheetUrl = els.adminSheetUrlInput.value.trim() || defaultSheetUrl;
+  state.settings.aaaYield = els.adminAaaOverrideInput.value.trim();
+  state.settings.bondYield = els.adminBondOverrideInput.value.trim();
+  state.settings.linkProvider = els.adminLinkProviderInput.value || "stockanalysis";
+  persist();
+  renderAdminPage();
+  loadScorecard(true).catch(showError);
+});
+
+els.tickerDisplayForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const symbol = cleanTicker(els.tickerDisplaySymbol.value);
+  if (!/^[A-Z][A-Z0-9.]{0,7}$/.test(symbol)) return;
+  state.settings.logoBackgrounds = state.settings.logoBackgrounds || {};
+  state.settings.logoBackgrounds[symbol] = els.tickerDisplayBg.value;
+  els.tickerDisplayForm.reset();
+  persist();
+  renderAdminPage();
+  renderRows();
 });
 
 [els.logStrike, els.logStockPrice].forEach((input) => input.addEventListener("input", updateStrikeVsStock));
@@ -1484,8 +1854,10 @@ function showError(error) {
 }
 
 async function boot() {
+  await loadAccount();
   renderPortfolio();
   renderActionLog();
+  renderAdminPage();
   applyLayoutState();
   renderPortfolioWorkspace();
   setView(state.activeView);
@@ -1493,6 +1865,7 @@ async function boot() {
   applyLayoutState();
   renderActionLog();
   renderPortfolioWorkspace();
+  renderAdminPage();
   setView(state.activeView);
   await loadScorecard();
 }
